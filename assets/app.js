@@ -167,14 +167,60 @@ function vPizarra(){
   if(!sid) return denied('Tu perfil no tiene cuadra privada ni acceso a pizarra.');
   return vStable(sid, true);
 }
+
+const boardActs = {
+  'P': {label:'Paddock', cls:'paddock'},
+  'C': {label:'Caminador', cls:'caminador'},
+  'CU': {label:'Cuerda', cls:'cuerda'},
+  'M': {label:'Monta', cls:'paddock'},
+  'VET': {label:'Veterinario', cls:'vet'},
+  'H': {label:'Herrador', cls:'vet'},
+  'SHOW': {label:'Concurso', cls:'show'},
+  'N': {label:'Nota', cls:'nota'},
+  '✓': {label:'Hecho', cls:'hecho'}
+};
+function personClass(id){
+  const idx = Math.max(0, S.profiles.findIndex(p=>p.id===id));
+  return ['natalia','ale','isa','sonso'][idx % 4];
+}
+function pizarraLegend(stableId){
+  const peopleIds = [...new Set([
+    ...S.profiles.filter(p=>p.roles.includes('jinete') || p.roles.includes('profesor') || p.roles.includes('gerente')).map(p=>p.id),
+    ...S.board.filter(b=>b.stableId===stableId).map(b=>b.personProfileId)
+  ].filter(Boolean))].slice(0,8);
+  return `<div class="legend board-legend">
+    <div class="legend-group"><p class="legend-label">Personas</p><div class="legend-pills">${peopleIds.map((id,i)=>{ const p=profile(id); return `<span class="pill-board person ${personClass(id)} ${i===0?'active':''}"><span class="code">${esc(p?.short||p?.name?.[0]||'?')}</span>${esc(p?.name||'Persona')}</span>`; }).join('')}</div></div>
+    <div class="legend-group"><p class="legend-label">Actividades</p><div class="legend-pills">
+      <span class="pill-board caminador"><span class="code">C</span>Caminador</span>
+      <span class="pill-board cuerda"><span class="code">CR</span>Cuerda</span>
+      <span class="pill-board paddock"><span class="code">P</span>Paddock</span>
+      <span class="pill-board vet"><span class="code">V</span>Veterinario</span>
+      <span class="pill-board show"><span class="code">★</span>Concurso</span>
+      <span class="pill-board nota"><span class="code">✎</span>Nota</span>
+      <span class="pill-board hecho"><span class="code">✓</span>Hecho</span>
+    </div></div>
+  </div>`;
+}
+function boardChip(b){
+  const cfg = boardActs[b.code] || boardActs.N;
+  const who = profile(b.personProfileId);
+  if(b.code==='SHOW') return `<span class="chip-show">Show</span>`;
+  if(b.code==='✓' || b.done) return `<span class="done">✓${esc(who?.short||'')}</span>`;
+  const label = b.code==='M' ? (who?.short || 'M') : b.code;
+  const sub = (b.note && b.code !== 'N') ? `<span class="sub">${esc(b.note)}</span>` : '';
+  if(b.note && b.code==='N') return `<div class="stack"><span class="chip ${cfg.cls}">N</span><span class="sub">${esc(b.note)}</span></div>`;
+  return `<div class="stack"><span class="chip ${cfg.cls}">${esc(label)}</span>${sub}</div>`;
+}
 function vStable(id, forcePizarra=false){
   const st=stable(id); if(!st || !visibleStableIds().includes(id)) return denied('No tienes acceso a esta cuadra.');
   const hs=stableHorses(id); const dates=weekDates();
   const weekBoard = S.board.filter(b=>b.stableId===id && dates.includes(b.date));
-  const table = `<div class="table-wrap"><table><thead><tr><th>Caballo</th>${dates.map((d,i)=>`<th class="${d===todayIso()?'today':''}">${days[i]}<br>${fmt(d)}</th>`).join('')}</tr></thead><tbody>${hs.map(h=>`<tr><td>${esc(h.name)}</td>${dates.map(d=>{ const cell=weekBoard.filter(b=>b.horseId===h.id && b.date===d); return `<td class="${d===todayIso()?'today':''}" data-modal="boardCell" data-horse="${h.id}" data-stable="${id}" data-date="${d}">${cell.length?cell.map(b=>`<span class="cell-chip ${b.done?'done':''}" title="${esc(b.note||'')}">${esc(b.code)}</span>`).join(' '):'·'}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
-  return `<section class="headline"><div><h2>${esc(st.name)}</h2><p>${st.type==='private'?'Cuadra privada':'Cuadra general'} · ficha del caballo compartida, pizarra propia de esta cuadra.</p></div><div class="actions"><button class="btn" data-go="inicio">Inicio</button><button class="btn primary" data-modal="quickRecord" data-stable="${id}">+ Registro</button></div></section>
-  <div class="tabs"><button class="tab active">Pizarra</button><button class="tab" data-go="caballos">Caballos</button></div>
-  <div class="grid"><div class="card"><h3>Pizarra semanal</h3>${table}<p class="small muted">Toca una casilla para añadir Paddock, Caminador, Monta, Veterinario, Herrador, Concurso, Nota o Hecho.</p></div></div>`;
+  const range = `${fmt(dates[0])} – ${fmt(dates[6])}`;
+  const table = `<div class="board exact-board"><table><thead><tr><th class="horse-col">Caballo</th>${dates.map((d,i)=>`<th class="${d===todayIso()?'today':''} ${i>4?'weekend':''}"><span class="daylabel">${days[i]}</span><span class="daynum">${new Date(d).getDate()}</span>${d===todayIso()?'<span class="hoy-tag">Hoy</span>':''}${i>4?'<span class="weekend-tag">Fin de semana</span>':''}</th>`).join('')}</tr></thead><tbody>${hs.map(h=>`<tr><td class="horse-col" data-go="horse/${h.id}">${esc(h.name)} <span class="edit-ic">✎</span></td>${dates.map((d,i)=>{ const cell=weekBoard.filter(b=>b.horseId===h.id && b.date===d); return `<td class="cell ${d===todayIso()?'today':''} ${i>4?'weekend':''}" data-modal="boardCell" data-horse="${h.id}" data-stable="${id}" data-date="${d}">${cell.length?`<div class="combo">${cell.map(boardChip).join('')}</div>`:'<span class="dot">·</span>'}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
+  return `<section class="headline board-head"><div class="brand board-brand"><span class="mark">E</span><span><small class="brand-eyebrow">EquiLog</small><h2>Pizarra semanal</h2><p>${esc(st.name)} · ${range}</p></span></div><div class="actions"><button class="btn" data-go="inicio">Inicio</button><button class="btn" data-modal="newHorse" data-stable="${id}">+ Caballo</button><button class="btn primary" data-modal="quickRecord" data-stable="${id}">+ Registro</button></div></section>
+  ${pizarraLegend(id)}
+  <div class="weeknav"><button class="btn btn-ghost">← Anterior</button><button class="btn-today">◷ Hoy</button><button class="btn btn-ghost">Siguiente →</button><button class="btn btn-ghost" data-action="repeatPrevWeek" data-stable="${id}">↻ Repetir anterior</button><span class="weekrange">${range}</span></div>
+  <div class="grid"><div class="card board-card">${table}<p class="small muted board-help">Toca una casilla para añadir Paddock, Caminador, Cuerda, Monta, Veterinario, Herrador, Concurso, Nota o Hecho. Es la misma pizarra cómoda de EquiLog, integrada ahora con registro rápido y creación de caballos.</p></div></div>`;
 }
 
 function vClases(){
@@ -234,7 +280,7 @@ function modalContent(kind,d){
   if(kind==='boardCell') return `<h3>Casilla de pizarra</h3>${quickRecordForm({stableId:d.stable,horseId:d.horse,date:d.date})}`;
   if(kind==='quickLinks') { const p=me(), all=viewModules(), active=S.quickLinks[p.id]||[]; return `<h3>Accesos directos</h3><form class="form" data-form="quickLinks"><div class="check-grid">${all.map(m=>`<label class="check"><input type="checkbox" name="links" value="${m.id}" ${active.includes(m.id)?'checked':''}>${m.icon} ${m.title}</label>`).join('')}</div><button class="btn primary" type="submit">Guardar</button></form>`; }
   if(kind==='editProfile'||kind==='newProfile') { const p = kind==='newProfile'?{id:'',name:'',short:'',color:'#3f5f8f',photo:'',roles:[],privateStableId:'',ownerName:'',canCreate:true}:profile(d.id); return `<h3>${kind==='newProfile'?'Nuevo perfil':'Editar perfil'}</h3><form class="form" data-form="profile" data-id="${p.id}"><div class="field"><label>Nombre</label><input class="input" name="name" value="${esc(p.name)}"></div><div class="field"><label>Iniciales</label><input class="input" name="short" value="${esc(p.short||'')}"></div><div class="field"><label>Color</label><input class="input" type="color" name="color" value="${p.color||'#3f5f8f'}"></div><div class="field"><label>Foto</label><input class="input" type="file" name="photo" accept="image/*"></div><div class="field"><label>Nombre como propietario</label><input class="input" name="ownerName" value="${esc(p.ownerName||p.name)}"></div><div class="field"><label>Cuadra privada</label><select class="input" name="privateStableId"><option value="">Sin cuadra privada</option>${S.stables.filter(s=>s.type==='private').map(s=>`<option value="${s.id}" ${p.privateStableId===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div><div class="field"><label>Roles</label><div class="check-grid">${['gerente','profesor','propietario','jinete','administracion'].map(r=>`<label class="check"><input type="checkbox" name="roles" value="${r}" ${(p.roles||[]).includes(r)?'checked':''}>${cap(r)}</label>`).join('')}</div></div><button class="btn primary" type="submit">Guardar perfil</button></form>`; }
-  if(kind==='editHorse'||kind==='newHorse') { const h = kind==='newHorse'?{id:'',name:'',type:'privado',status:'activo',ownerProfileIds:[],riderProfileId:'',homeStableId:'campomanes',linkedStableIds:['campomanes'],notes:'',photo:''}:horse(d.id); return `<h3>${kind==='newHorse'?'Nuevo caballo':'Editar caballo'}</h3><form class="form" data-form="horse" data-id="${h.id}"><div class="field"><label>Nombre</label><input class="input" name="name" value="${esc(h.name)}"></div><div class="field"><label>Foto</label><input class="input" type="file" name="photo" accept="image/*"></div><div class="field"><label>Tipo</label><select class="input" name="type"><option value="privado" ${h.type==='privado'?'selected':''}>Privado</option><option value="escuela" ${h.type==='escuela'?'selected':''}>Escuela</option></select></div><div class="field"><label>Propietarios</label><div class="check-grid">${S.profiles.map(p=>`<label class="check"><input type="checkbox" name="owners" value="${p.id}" ${(h.ownerProfileIds||[]).includes(p.id)?'checked':''}>${esc(p.name)}</label>`).join('')}</div></div><div class="field"><label>Jinete/responsable</label><select class="input" name="riderProfileId"><option value="">Sin jinete</option>${S.profiles.map(p=>`<option value="${p.id}" ${h.riderProfileId===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div><div class="field"><label>Compartido en cuadras</label><div class="check-grid">${S.stables.map(s=>`<label class="check"><input type="checkbox" name="linkedStableIds" value="${s.id}" ${(h.linkedStableIds||[]).includes(s.id)?'checked':''}>${esc(s.name)}</label>`).join('')}</div></div><div class="field"><label>Notas</label><textarea class="input" name="notes">${esc(h.notes||'')}</textarea></div><button class="btn primary" type="submit">Guardar caballo</button></form>`; }
+  if(kind==='editHorse'||kind==='newHorse') { const defaultStable = d.stable || me().privateStableId || 'campomanes'; const h = kind==='newHorse'?{id:'',name:'',type:'privado',status:'activo',ownerProfileIds:[me().roles.includes('propietario')?me().id:''].filter(Boolean),riderProfileId:me().roles.includes('jinete')?me().id:'',homeStableId:defaultStable,linkedStableIds:[defaultStable],notes:'',photo:''}:horse(d.id); return `<h3>${kind==='newHorse'?'Nuevo caballo':'Editar caballo'}</h3><form class="form" data-form="horse" data-id="${h.id}"><div class="field"><label>Nombre</label><input class="input" name="name" value="${esc(h.name)}" placeholder="Nombre del caballo"></div><div class="field"><label>Foto</label><input class="input" type="file" name="photo" accept="image/*"></div><div class="field"><label>Tipo</label><select class="input" name="type"><option value="privado" ${h.type==='privado'?'selected':''}>Privado</option><option value="escuela" ${h.type==='escuela'?'selected':''}>Escuela</option></select></div><div class="field"><label>Propietarios</label><div class="check-grid">${S.profiles.map(p=>`<label class="check"><input type="checkbox" name="owners" value="${p.id}" ${(h.ownerProfileIds||[]).includes(p.id)?'checked':''}>${esc(p.name)}</label>`).join('')}</div></div><div class="field"><label>Jinete/responsable</label><select class="input" name="riderProfileId"><option value="">Sin jinete</option>${S.profiles.map(p=>`<option value="${p.id}" ${h.riderProfileId===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div><div class="field"><label>Compartido en cuadras</label><div class="check-grid">${S.stables.map(s=>`<label class="check"><input type="checkbox" name="linkedStableIds" value="${s.id}" ${(h.linkedStableIds||[]).includes(s.id)?'checked':''}>${esc(s.name)}</label>`).join('')}</div><p class="small muted">No se duplica el caballo: es una ficha única que puede verse en varias cuadras.</p></div><div class="field"><label>Notas</label><textarea class="input" name="notes">${esc(h.notes||'')}</textarea></div><button class="btn primary" type="submit">Guardar caballo</button></form>`; }
   if(kind==='shareHorse') { const h=horse(d.id); return `<h3>Compartir ${esc(h.name)}</h3><p class="muted">Es el mismo caballo en todas las cuadras. Marca dónde debe aparecer.</p><form class="form" data-form="shareHorse" data-id="${h.id}"><div class="check-grid">${S.stables.map(s=>`<label class="check"><input type="checkbox" name="linkedStableIds" value="${s.id}" ${(h.linkedStableIds||[]).includes(s.id)?'checked':''}>${esc(s.name)}</label>`).join('')}</div><button class="btn primary" type="submit">Guardar</button></form>`; }
   if(kind==='newClass'||kind==='editClass') { const c = kind==='newClass'?{id:'',title:'',date:todayIso(),time:'17:00',type:'grupo',teacherId:me().roles.includes('profesor')?me().id:'',place:'',studentIds:[]}:klass(d.id); return `<h3>${kind==='newClass'?'Nueva clase':'Editar clase'}</h3><form class="form" data-form="class" data-id="${c.id}"><div class="field"><label>Título</label><input class="input" name="title" value="${esc(c.title)}" placeholder="Grupo ponis, particular..."></div><div class="field"><label>Fecha</label><input class="input" type="date" name="date" value="${c.date}"></div><div class="field"><label>Hora</label><input class="input" type="time" name="time" value="${c.time}"></div><div class="field"><label>Tipo</label><select class="input" name="type"><option value="grupo" ${c.type==='grupo'?'selected':''}>Grupo</option><option value="particular" ${c.type==='particular'?'selected':''}>Particular</option><option value="grupo_ponis" ${c.type==='grupo_ponis'?'selected':''}>Grupo ponis</option></select></div><div class="field"><label>Profesor</label><select class="input" name="teacherId">${S.profiles.filter(p=>p.roles.includes('profesor')||p.roles.includes('gerente')).map(p=>`<option value="${p.id}" ${c.teacherId===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div><div class="field"><label>Lugar</label><input class="input" name="place" value="${esc(c.place||'')}"></div><div class="field"><label>Alumnos</label><div class="check-grid">${S.students.map(s=>`<label class="check"><input type="checkbox" name="students" value="${s.id}" ${(c.studentIds||[]).includes(s.id)?'checked':''}>${esc(s.name)}</label>`).join('')}</div></div><button class="btn primary" type="submit">Guardar clase</button></form>`; }
   if(kind==='newStudent') return `<h3>Nuevo alumno</h3><form class="form" data-form="student"><div class="field"><label>Nombre</label><input class="input" name="name"></div><div class="field"><label>Nivel</label><input class="input" name="level"></div><div class="field"><label>Notas</label><textarea class="input" name="notes"></textarea></div><button class="btn primary" type="submit">Guardar alumno</button></form>`;
@@ -299,7 +345,20 @@ function actions(e){
   const modal=e.target.closest('[data-modal]'); if(modal){ openModal(modal.dataset.modal, modal.dataset); return; }
   if(e.target.closest('[data-close]')){ closeModal(); return; }
   const setP=e.target.closest('[data-set-profile]'); if(setP){ S.activeProfileId=setP.dataset.setProfile; save(); closeModal(); setHash('inicio'); render(); return; }
-  const act=e.target.closest('[data-action]'); if(act){ if(act.dataset.action==='reset') reset(); if(act.dataset.action==='allAttend'){ const c=klass(act.dataset.id); c.studentIds.forEach(sid=>c.attendance[sid]='vino'); save(); render(); } }
+  const act=e.target.closest('[data-action]'); if(act){
+    if(act.dataset.action==='reset') reset();
+    if(act.dataset.action==='allAttend'){ const c=klass(act.dataset.id); c.studentIds.forEach(sid=>c.attendance[sid]='vino'); save(); render(); }
+    if(act.dataset.action==='repeatPrevWeek'){
+      const sid=act.dataset.stable, dates=weekDates(), prev=dates.map(d=>addDays(d,-7));
+      const existing=new Set(S.board.filter(b=>b.stableId===sid && dates.includes(b.date)).map(b=>b.horseId+'|'+b.date+'|'+b.code));
+      let n=0;
+      S.board.filter(b=>b.stableId===sid && prev.includes(b.date)).forEach(b=>{
+        const nd=addDays(b.date,7), key=b.horseId+'|'+nd+'|'+b.code;
+        if(!existing.has(key)){ S.board.push({...b,id:uid('b'),date:nd,done:false}); n++; }
+      });
+      save(); render(); toast(n ? 'Semana repetida' : 'No había nada que repetir');
+    }
+  }
 }
 function changes(e){
   const el=e.target;
