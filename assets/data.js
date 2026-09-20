@@ -27,20 +27,20 @@
   };
 
   const ACTIVIDADES = [
-    { id: 'P', codigo: 'P', nombre: 'Paddock', color: '#5C8C4F', visible: true },
-    { id: 'C', codigo: 'C', nombre: 'Caminador', color: '#3E7396', visible: true },
+    { id: 'P', codigo: 'P', nombre: 'Paddock', color: '#3C7A52', visible: true },
+    { id: 'C', codigo: 'C', nombre: 'Caminador', color: '#8C5F36', visible: true },
     { id: 'CU', codigo: 'CU', nombre: 'Cuerda', color: '#7C60A8', visible: true },
     { id: 'M', codigo: 'M', nombre: 'Monta', color: '#A85C25', visible: true },
-    { id: 'VET', codigo: 'VET', nombre: 'Veterinario', color: '#B03A2E', visible: true },
+    { id: 'VET', codigo: 'VET', nombre: 'Veterinario', color: '#1D6454', visible: true },
     { id: 'H', codigo: 'H', nombre: 'Herrador', color: '#6B655B', visible: true },
-    { id: 'SHOW', codigo: 'Show', nombre: 'Concurso', color: '#B0851C', visible: true },
-    { id: 'N', codigo: 'N', nombre: 'Nota', color: '#2F6B4F', visible: true }
+    { id: 'SHOW', codigo: 'SHOW', nombre: 'Concurso', color: '#8A6412', visible: true },
+    { id: 'PM', codigo: 'PM', nombre: 'Paseo de la mano', color: '#4F5F39', visible: true }
   ];
 
   function vacio() {
     return {
-      version: 1,
-      perfil: { nombre: 'Jinete', inicial: 'J', color: '#2F6B4F', foto: '', rol: 'Jinete', vistaInicial: 'pizarra' },
+      version: 2,
+      perfil: { nombre: 'Jinete', codigo: 'J', color: '#275F51', foto: '', rol: 'Jinete', vistaInicial: 'pizarra' },
       caballos: [], personas: [], actividades: ACTIVIDADES.map(a => ({ ...a })),
       celdas: [], registros: []
     };
@@ -51,51 +51,64 @@
     const t = today(), lun = weekStart(t);
     const caballo = (nombre, extra) => Object.assign({ id: uid('c'), nombre, foto: '', propietario: '', responsableId: '', estado: 'Activo', notas: '', visible: true }, extra || {});
     s.personas = [
-      { id: 'p1', nombre: 'Jinete 1', inicial: 'J', color: '#2F6B4F', rol: 'Jinete', visible: true },
-      { id: 'p2', nombre: 'Ayudante 1', inicial: 'A', color: '#3E7396', visible: true, rol: 'Ayudante' },
-      { id: 'p3', nombre: 'Persona 1', inicial: 'I', color: '#7C60A8', rol: 'Propietario', visible: true }
+      { id: 'per1', codigo: 'J', nombre: 'Jinete 1', color: '#275F51', rol: 'Jinete', visible: true },
+      { id: 'per2', codigo: 'A', nombre: 'Ayudante 1', color: '#3E7396', rol: 'Ayudante', visible: true },
+      { id: 'per3', codigo: 'I', nombre: 'Persona 1', color: '#7C60A8', rol: 'Propietario', visible: true }
     ];
     s.perfil.nombre = 'Jinete 1';
     s.caballos = [
-      caballo('Caleste', { responsableId: 'p1' }),
-      caballo('Chacoon', { responsableId: 'p1' }),
-      caballo('Dassini', { responsableId: 'p2' }),
+      caballo('Caleste', { responsableId: 'per1' }),
+      caballo('Chacoon', { responsableId: 'per1' }),
+      caballo('Dassini', { responsableId: 'per2' }),
       caballo('Houston', {}),
-      caballo('Gogo', { responsableId: 'p3' }),
+      caballo('Gogo', { responsableId: 'per3' }),
       caballo('Basilea', { estado: 'Descanso' })
     ];
-    const [c1, c2, c3, c4, c5, c6] = s.caballos;
-    const cel = (c, dia, codigos, personaId, extra) => s.celdas.push(Object.assign({
-      id: uid('z'), caballoId: c.id, fecha: addDays(lun, dia), codigos, personaId: personaId || '', nota: '', hecho: false
+    const c = s.caballos;
+    const cel = (h, dia, codigos, extra) => s.celdas.push(Object.assign({
+      id: uid('z'), caballoId: h.id, fecha: addDays(lun, Math.min(6, Math.max(0, dia))), codigos, hechos: [], nota: '', vet: ''
     }, extra || {}));
     const hoyIdx = diffDays(lun, t);
-    const dh = n => Math.min(6, Math.max(0, hoyIdx + n));
-    cel(c1, 0, ['P'], 'p1'); cel(c1, 1, ['N', 'P'], 'p1'); cel(c1, 4, ['M'], 'p2'); cel(c1, 5, ['P'], '');
-    cel(c2, 0, ['N'], ''); cel(c2, 1, ['C'], 'p2'); cel(c2, 4, ['N'], ''); cel(c2, 5, ['C', 'P'], 'p1');
-    cel(c3, 0, ['M'], 'p1', { hecho: true }); cel(c3, 1, ['P'], ''); cel(c3, 5, ['M', 'P'], 'p2');
-    cel(c4, 0, ['C'], ''); cel(c4, 1, ['C'], 'p3'); cel(c4, 5, ['P'], '');
-    cel(c5, 0, ['P'], 'p1'); cel(c5, 1, ['N'], ''); cel(c5, 2, ['M'], 'p1'); cel(c5, 4, ['M'], ''); cel(c5, 5, ['N'], '');
-    cel(c6, 0, ['CU'], 'p3'); cel(c6, 1, ['P'], ''); cel(c6, 4, [], '', { nota: 'Descanso' }); cel(c6, 5, ['C'], '');
-    if (!s.celdas.some(z => z.fecha === t && z.caballoId === c1.id)) cel(c1, hoyIdx, ['M'], 'p1');
-    if (!s.celdas.some(z => z.fecha === t && z.caballoId === c2.id)) cel(c2, hoyIdx, ['P'], '');
-    if (!s.celdas.some(z => z.fecha === t && z.caballoId === c5.id)) cel(c5, hoyIdx, ['C', 'P'], 'p2');
-    cel(c4, dh(2), ['H'], '', { nota: 'Herrador 9:00' });
+    cel(c[0], 0, ['per1', 'P']); cel(c[0], 1, ['per1', 'PM', 'P']); cel(c[0], 4, ['per2', 'M']); cel(c[0], 5, ['P']);
+    cel(c[1], 0, ['PM']); cel(c[1], 1, ['per2', 'C']); cel(c[1], 4, ['C']); cel(c[1], 5, ['per1', 'C', 'P']);
+    cel(c[2], 0, ['per1', 'M'], { hechos: ['per1', 'M'] }); cel(c[2], 1, ['P']); cel(c[2], 5, ['per2', 'M', 'P']);
+    cel(c[3], 0, ['C']); cel(c[3], 1, ['per3', 'C']); cel(c[3], 5, ['P']);
+    cel(c[4], 0, ['per1', 'P']); cel(c[4], 1, ['PM']); cel(c[4], 2, ['per1', 'M']); cel(c[4], 4, ['M']); cel(c[4], 5, ['P']);
+    cel(c[5], 0, ['per3', 'CU']); cel(c[5], 1, ['P']); cel(c[5], 4, [], { nota: 'Descanso' }); cel(c[5], 5, ['C']);
+    if (!s.celdas.some(z => z.fecha === t && z.caballoId === c[0].id)) cel(c[0], hoyIdx, ['per1', 'M']);
+    if (!s.celdas.some(z => z.fecha === t && z.caballoId === c[1].id)) cel(c[1], hoyIdx, ['P']);
+    if (!s.celdas.some(z => z.fecha === t && z.caballoId === c[4].id)) cel(c[4], hoyIdx, ['per2', 'C', 'P']);
+    cel(c[3], hoyIdx + 2, ['H'], { nota: 'Herrador 9:00' });
     const reg = o => s.registros.push(Object.assign({ id: uid('r'), fecha: t, nota: '', enlace: '' }, o));
-    reg({ tipo: 'veterinario', caballoId: c1.id, fecha: addDays(t, -2), concepto: 'Vacuna de gripe', nota: 'Sin reacción.' });
-    reg({ tipo: 'recordatorio', caballoId: c1.id, fecha: addMonths(addDays(t, -2), 6), concepto: 'Veterinario: Vacuna de gripe', responsableId: 'p1', hecho: false });
-    reg({ tipo: 'herrador', caballoId: c3.id, fecha: addDays(t, -12), concepto: 'Herraje', subtipo: 'Herraje', nota: 'Manos con barras.' });
-    reg({ tipo: 'recordatorio', caballoId: c3.id, fecha: addDays(t, 2), concepto: 'Herrador: Herraje', responsableId: 'p2', hecho: false });
-    reg({ tipo: 'recordatorio', caballoId: c5.id, fecha: addDays(t, 5), concepto: 'Desparasitación', responsableId: '', hecho: false });
-    reg({ tipo: 'nota', caballoId: c6.id, fecha: addDays(t, -1), concepto: 'Nota', nota: 'Sale algo cargada de la mano derecha. Ojo esta semana.' });
-    reg({ tipo: 'documento', caballoId: c1.id, fecha: addDays(t, -30), concepto: 'Pasaporte', enlace: 'https://ejemplo.com/pasaporte' });
+    reg({ tipo: 'veterinario', caballoId: c[0].id, fecha: addDays(t, -2), concepto: 'Vacuna de gripe', nota: 'Sin reacción.' });
+    reg({ tipo: 'recordatorio', caballoId: c[0].id, fecha: addMonths(addDays(t, -2), 6), concepto: 'Veterinario: Vacuna de gripe', responsableId: 'per1', hecho: false });
+    reg({ tipo: 'herrador', caballoId: c[2].id, fecha: addDays(t, -12), concepto: 'Herraje', subtipo: 'Herraje', nota: 'Manos con barras.' });
+    reg({ tipo: 'recordatorio', caballoId: c[2].id, fecha: addDays(t, 2), concepto: 'Herrador: Herraje', responsableId: 'per2', hecho: false });
+    reg({ tipo: 'recordatorio', caballoId: c[4].id, fecha: addDays(t, 5), concepto: 'Desparasitación', responsableId: '', hecho: false });
+    reg({ tipo: 'nota', caballoId: c[5].id, fecha: addDays(t, -1), concepto: 'Nota', nota: 'Sale algo cargada de la mano derecha. Ojo esta semana.' });
+    reg({ tipo: 'documento', caballoId: c[0].id, fecha: addDays(t, -30), concepto: 'Pasaporte', enlace: 'https://ejemplo.com/pasaporte' });
     return s;
   }
 
   /* ---------- Persistencia ---------- */
   let S;
+  function migrar(d) {
+    if (!d) return null;
+    if (d.version === 1) {
+      (d.personas || []).forEach(p => { if (!p.codigo) p.codigo = p.inicial || (p.nombre || '?').charAt(0).toUpperCase(); });
+      (d.celdas || []).forEach(z => {
+        z.codigos = z.codigos || [];
+        if (z.personaId) { if (!z.codigos.includes(z.personaId)) z.codigos.unshift(z.personaId); delete z.personaId; }
+        z.hechos = z.hecho ? z.codigos.slice() : [];
+        delete z.hecho;
+        z.vet = z.vet || '';
+      });
+      d.version = 2;
+    }
+    return d.version === 2 ? d : null;
+  }
   function load() {
-    try { S = JSON.parse(localStorage.getItem(KEY)); } catch (e) { S = null; }
-    if (!S || S.version !== 1) S = null;
+    try { S = migrar(JSON.parse(localStorage.getItem(KEY))); } catch (e) { S = null; }
     if (!S) { S = demo(); guardar(); }
     const base = vacio();
     for (const k in base) if (S[k] === undefined) S[k] = base[k];
@@ -120,35 +133,47 @@
     caballo: id => by(S.caballos, id),
     persona: id => by(S.personas, id),
     act: id => by(S.actividades, id),
+    boton: id => by(S.personas, id) || by(S.actividades, id),
     registro: id => by(S.registros, id),
     celda: (caballoId, fecha) => S.celdas.find(c => c.caballoId === caballoId && c.fecha === fecha) || null
   };
 
-  /* Caballos visibles en la pizarra, en su orden */
   const caballosPizarra = () => S.caballos.filter(c => c.visible !== false && c.estado !== 'Baja');
   const personasVisibles = () => S.personas.filter(p => p.visible !== false);
   const actividadesVisibles = () => S.actividades.filter(a => a.visible !== false);
+  /* Botones de la pizarra: personas primero, luego actividades. Marca el orden dentro de la casilla. */
+  const botones = () => personasVisibles().map(p => Object.assign({ grupo: 'persona' }, p)).concat(actividadesVisibles().map(a => Object.assign({ grupo: 'actividad' }, a)));
+  const ordenBotones = () => botones().map(b => b.id);
+  const esVet = b => !!b && String(b.codigo || '').toUpperCase() === 'VET';
 
   function upsertCelda(caballoId, fecha, cambios) {
     let c = get.celda(caballoId, fecha);
-    if (!c) { c = { id: uid('z'), caballoId, fecha, codigos: [], personaId: '', nota: '', hecho: false }; S.celdas.push(c); }
+    if (!c) { c = { id: uid('z'), caballoId, fecha, codigos: [], hechos: [], nota: '', vet: '' }; S.celdas.push(c); }
     Object.assign(c, cambios);
+    c.hechos = (c.hechos || []).filter(k => c.codigos.includes(k));
     limpiarCelda(c);
     return c;
   }
   function limpiarCelda(c) {
-    if (!c.codigos.length && !c.nota && !c.personaId && !c.hecho) S.celdas = S.celdas.filter(x => x.id !== c.id);
+    if (!c.codigos.length && !c.nota && !c.vet) S.celdas = S.celdas.filter(x => x.id !== c.id);
   }
-  function toggleCodigo(caballoId, fecha, codigo, personaId) {
+  function vaciarCelda(caballoId, fecha) {
+    const c = get.celda(caballoId, fecha);
+    if (c) S.celdas = S.celdas.filter(x => x.id !== c.id);
+  }
+  function toggleCodigo(caballoId, fecha, codigo) {
     const c = get.celda(caballoId, fecha) || upsertCelda(caballoId, fecha, {});
-    const i = c.codigos.indexOf(codigo);
-    if (i >= 0) c.codigos.splice(i, 1);
-    else { c.codigos.push(codigo); if (personaId) c.personaId = personaId; }
+    if (c.codigos.includes(codigo)) {
+      c.codigos = c.codigos.filter(k => k !== codigo);
+      c.hechos = c.hechos.filter(k => k !== codigo);
+    } else {
+      const orden = ordenBotones();
+      c.codigos = c.codigos.concat([codigo]).sort((a, b) => orden.indexOf(a) - orden.indexOf(b));
+    }
     limpiarCelda(c);
     return c;
   }
 
-  /* Recordatorios pendientes ordenados */
   function recordatorios(soloPendientes) {
     return S.registros.filter(r => r.tipo === 'recordatorio' && (!soloPendientes || !r.hecho))
       .sort((a, b) => a.fecha.localeCompare(b.fecha));
@@ -161,8 +186,8 @@
     borrar() { localStorage.removeItem(KEY); S = vacio(); API.state = S; },
     uid, ESTADOS, TIPOS_REG,
     fecha: { today, addDays, addMonths, addWeeks, weekStart, diffDays, parse, toISO },
-    get, caballosPizarra, personasVisibles, actividadesVisibles,
-    upsertCelda, toggleCodigo, limpiarCelda, recordatorios, registrosDe
+    get, caballosPizarra, personasVisibles, actividadesVisibles, botones, ordenBotones, esVet,
+    upsertCelda, limpiarCelda, vaciarCelda, toggleCodigo, recordatorios, registrosDe
   };
   load();
   window.EQ = API;

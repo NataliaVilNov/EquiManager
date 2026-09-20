@@ -69,9 +69,8 @@
   }
   function pav(p, size = 34) {
     if (!p) return '';
-    return `<span class="av" style="width:${size}px;height:${size}px;background:${esc(p.color || '#8C8377')};font-size:${Math.round(size * .42)}px">${p.foto ? `<img src="${p.foto}" alt="">` : esc(p.inicial || iniciales(p.nombre))}</span>`;
+    return `<span class="av" style="width:${size}px;height:${size}px;background:${esc(p.color || '#8C8377')};font-size:${Math.round(size * .42)}px">${p.foto ? `<img src="${p.foto}" alt="">` : esc(p.codigo || iniciales(p.nombre))}</span>`;
   }
-  const actDe = id => E.get.act(id) || { codigo: id, color: '#6C6659', nombre: id };
   const cName = id => (E.get.caballo(id) || {}).nombre || '';
   const pName = id => (E.get.persona(id) || {}).nombre || '';
   function row({ href, icon, lead, t, s, end, data = '', cls = '' }) {
@@ -148,9 +147,9 @@
         return `${open()}${lab}<select id="${id}">${f.options.map(o => `<option value="${esc(o.v)}" ${String(o.v) === String(val) ? 'selected' : ''}>${esc(o.l)}</option>`).join('')}</select>${hint}</div>`;
       case 'segment':
         return `${open()}<span class="lab">${esc(f.label)}</span><div class="pick ${f.col ? 'col' : ''}" role="radiogroup" aria-label="${esc(f.label)}">${f.options.map(o => `<label><input type="radio" name="${id}" value="${esc(o.v)}" ${String(o.v) === String(val) ? 'checked' : ''}><span>${esc(o.l)}</span></label>`).join('')}</div>${hint}</div>`;
-      case 'acts': {
+      case 'botones': {
         const arr = Array.isArray(val) ? val : [];
-        return `${open()}<span class="lab">${esc(f.label)}</span><div class="pick">${E.actividadesVisibles().map(a => `<label><input type="checkbox" value="${esc(a.id)}" ${arr.includes(a.id) ? 'checked' : ''}><span><b style="color:${a.color}">${esc(a.codigo)}</b> ${esc(a.nombre)}</span></label>`).join('')}</div>${hint}</div>`;
+        return `${open()}<span class="lab">${esc(f.label)}</span><div class="pick">${E.botones().map(b => `<label><input type="checkbox" value="${esc(b.id)}" ${arr.includes(b.id) ? 'checked' : ''}><span><b style="color:${b.color}">${esc(b.codigo)}</b> ${esc(b.nombre)}</span></label>`).join('')}</div>${hint}</div>`;
       }
       case 'color':
         return `${open()}<span class="lab">${esc(f.label)}</span><div class="swatches">${PALETA.concat(PALETA.includes(val) || !val ? [] : [val]).map(c => `<label><input type="radio" name="${id}" value="${c}" ${c === (val || PALETA[0]) ? 'checked' : ''} aria-label="Color ${c}"><span style="--c:${c}"></span></label>`).join('')}</div></div>`;
@@ -179,7 +178,7 @@
       const r = $(`[data-key="${f.key}"]`, root); if (!r) return;
       switch (f.type) {
         case 'toggle': out[f.key] = $('input', r).checked; break;
-        case 'acts': out[f.key] = $$('input:checked', r).map(i => i.value); break;
+        case 'botones': out[f.key] = $$('input:checked', r).map(i => i.value); break;
         case 'segment': case 'color': out[f.key] = ($('input:checked', r) || {}).value || ''; break;
         case 'number': { const s = $('input', r).value.replace(',', '.'); out[f.key] = s === '' ? '' : +s; break; }
         case 'photo': out[f.key] = $('input[type=hidden]', r).value; break;
@@ -261,8 +260,7 @@
     switch (tipo) {
       case 'pizarra': return [
         { key: 'fecha', label: 'Fecha', type: 'date', def: pre.fecha || t, req: true }, cab,
-        { key: 'codigos', label: 'Actividad', type: 'acts', req: true },
-        per('Quién lo hace', 'Sin asignar'),
+        { key: 'codigos', label: 'Personas y actividades', type: 'botones', req: true },
         { key: 'nota', label: 'Nota', ph: 'Opcional' },
         { key: 'hecho', label: 'Marcar como hecho', type: 'toggle' }];
       case 'veterinario': return [
@@ -298,10 +296,11 @@
     const t = F.today();
     if (tipo === 'pizarra') {
       const c = E.upsertCelda(v.caballoId, v.fecha, {});
+      const orden = E.ordenBotones();
       v.codigos.forEach(x => { if (!c.codigos.includes(x)) c.codigos.push(x); });
-      if (v.personaId) c.personaId = v.personaId;
+      c.codigos.sort((x, y) => orden.indexOf(x) - orden.indexOf(y));
       if (v.nota) c.nota = c.nota ? c.nota + ' · ' + v.nota : v.nota;
-      c.hecho = !!v.hecho;
+      c.hechos = v.hecho ? c.codigos.slice() : (c.hechos || []);
       E.limpiarCelda(c);
       return 'Añadido a la pizarra';
     }
@@ -311,11 +310,16 @@
     if (tipo === 'nota') { r.concepto = 'Nota'; r.visibilidad = v.visibilidad; }
     S().registros.push(r);
     if (tipo === 'veterinario' || tipo === 'herrador') {
-      const code = tipo === 'veterinario' ? 'VET' : 'H';
-      const c = E.upsertCelda(r.caballoId, r.fecha, {});
-      if (!c.codigos.includes(code)) c.codigos.push(code);
-      if (r.fecha < t) c.hecho = true;
-      E.limpiarCelda(c);
+      const buscado = tipo === 'veterinario' ? 'VET' : 'H';
+      const bot = S().actividades.find(x => (x.codigo || '').toUpperCase() === buscado);
+      if (bot) {
+        const c = E.upsertCelda(r.caballoId, r.fecha, {});
+        const orden = E.ordenBotones();
+        if (!c.codigos.includes(bot.id)) c.codigos.push(bot.id);
+        c.codigos.sort((x, y) => orden.indexOf(x) - orden.indexOf(y));
+        if (r.fecha < t) c.hechos = c.codigos.slice();
+        E.limpiarCelda(c);
+      }
       if (v.recordar) {
         let f = v.recFecha;
         if (v.plazo && v.plazo !== 'otra') f = v.plazo[0] === 's' ? F.addWeeks(r.fecha, +v.plazo.slice(1)) : F.addMonths(r.fecha, +v.plazo);
@@ -421,21 +425,21 @@
   }
   function personaForm(p) {
     const nueva = !p;
-    p = p || { id: E.uid('p'), nombre: '', inicial: '', color: PALETA[1], rol: '', visible: true };
+    p = p || { id: E.uid('per'), nombre: '', codigo: '', color: PALETA[1], rol: '', visible: true };
     openForm({
       title: nueva ? 'Nueva persona' : 'Editar persona', values: p,
       fields: [
         { key: 'nombre', label: 'Nombre', req: true, ph: 'Jinete 1, Ayudante 1…' },
-        { key: 'inicial', label: 'Inicial o código', ph: 'J', hint: 'Es lo que se ve en la pizarra.' },
+        { key: 'codigo', label: 'Inicial o código', ph: 'J', hint: 'Es lo que se ve en la casilla de la pizarra.' },
         { key: 'color', label: 'Color', type: 'color' },
         { key: 'rol', label: 'Rol', ph: 'Opcional: jinete, ayudante…' },
         { key: 'visible', label: 'Mostrar en la pizarra', type: 'toggle' }
       ],
-      onSave: v => { Object.assign(p, v); if (!p.inicial) p.inicial = p.nombre.charAt(0).toUpperCase(); if (nueva) S().personas.push(p); toast('Guardado'); },
+      onSave: v => { Object.assign(p, v); p.codigo = (p.codigo || p.nombre.charAt(0)).toUpperCase().slice(0, 4); if (nueva) S().personas.push(p); toast('Guardado'); },
       onDelete: nueva ? null : () => {
         if (!confirm('¿Eliminar a ' + p.nombre + '?')) return false;
         S().personas = S().personas.filter(x => x.id !== p.id);
-        S().celdas.forEach(z => { if (z.personaId === p.id) z.personaId = ''; });
+        S().celdas.forEach(z => { z.codigos = z.codigos.filter(k => k !== p.id); z.hechos = (z.hechos || []).filter(k => k !== p.id); E.limpiarCelda(z); });
         S().caballos.forEach(c => { if (c.responsableId === p.id) c.responsableId = ''; });
       }
     });
@@ -466,7 +470,7 @@
       fields: [
         { key: 'foto', label: 'Foto', type: 'photo' },
         { key: 'nombre', label: 'Nombre', req: true },
-        { key: 'inicial', label: 'Inicial', ph: 'J' },
+        { key: 'codigo', label: 'Inicial', ph: 'J' },
         { key: 'color', label: 'Color', type: 'color' },
         { key: 'rol', label: 'Rol', type: 'segment', options: [{ v: 'Jinete', l: 'Jinete' }, { v: 'Responsable', l: 'Responsable' }] },
         { key: 'vistaInicial', label: 'Vista inicial', type: 'segment', options: [{ v: 'inicio', l: 'Inicio' }, { v: 'pizarra', l: 'Pizarra' }, { v: 'caballos', l: 'Caballos' }] }
@@ -475,83 +479,8 @@
     });
   }
 
-  /* ================= Estado de la pizarra ================= */
-  let semana = F.weekStart(F.today());
-  let herramienta = null;   // {tipo:'act', id} | {tipo:'hecho'|'copiar'|'borrar'}
-  let personaSel = null;    // id de persona
-  let copia = null;         // {caballoId, fecha}
-
-  function cellHTML(c, cel, fecha) {
-    if (!cel || (!cel.codigos.length && !cel.nota && !cel.personaId && !cel.hecho)) {
-      return `<span class="dotempty" aria-hidden="true">·</span>`;
-    }
-    const codes = cel.codigos.map(id => { const a = actDe(id); return `<span class="code" style="--c:${a.color}">${esc(a.codigo)}</span>`; }).join('<span class="sep">·</span>');
-    const per = E.get.persona(cel.personaId);
-    return `${cel.codigos.length ? `<span class="codes">${codes}${cel.hecho ? `<span class="done">${ic('check', 's')}</span>` : ''}</span>` : (cel.hecho ? `<span class="done">${ic('check', 's')}</span>` : '')}
-      ${cel.nota ? `<span class="note">${esc(cel.nota)}</span>` : ''}
-      ${per ? `<span class="who" style="--c:${per.color}">${esc(per.inicial || iniciales(per.nombre))}</span>` : ''}`;
-  }
-  function cellLabel(c, cel, fecha, i) {
-    const partes = [c.nombre, DIAS[i] + ' ' + F.parse(fecha).getDate() + ':'];
-    if (!cel || !cel.codigos.length) partes.push('vacío');
-    else partes.push(cel.codigos.map(x => actDe(x).nombre).join(', '));
-    if (cel && cel.personaId) partes.push(pName(cel.personaId));
-    if (cel && cel.nota) partes.push(cel.nota);
-    if (cel && cel.hecho) partes.push('hecho');
-    return partes.join(' ');
-  }
-  function modoTexto() {
-    if (herramienta && herramienta.tipo === 'act') { const a = actDe(herramienta.id); return { badge: a.codigo, color: a.color, txt: `Toca casillas para añadir o quitar ${a.nombre}` }; }
-    if (herramienta && herramienta.tipo === 'hecho') return { badge: '✓', color: 'var(--green)', txt: 'Toca casillas para marcarlas como hechas' };
-    if (herramienta && herramienta.tipo === 'copiar') return { badge: '⧉', color: 'var(--green)', txt: copia ? 'Toca la casilla donde quieres pegarla' : 'Toca la casilla que quieres copiar' };
-    if (herramienta && herramienta.tipo === 'borrar') return { badge: '⌫', color: 'var(--danger)', txt: 'Toca casillas para vaciarlas' };
-    if (personaSel) { const p = E.get.persona(personaSel); return { badge: p.inicial || iniciales(p.nombre), color: p.color, txt: `Toca casillas para poner o quitar a ${p.nombre}` }; }
-    return { badge: '·', color: 'var(--ink-3)', txt: 'Toca una casilla para editarla, o elige una actividad arriba' };
-  }
-  function tocarCelda(caballoId, fecha) {
-    const cel = E.get.celda(caballoId, fecha);
-    if (herramienta && herramienta.tipo === 'act') {
-      E.toggleCodigo(caballoId, fecha, herramienta.id, personaSel || '');
-    } else if (herramienta && herramienta.tipo === 'hecho') {
-      const c = cel || E.upsertCelda(caballoId, fecha, {});
-      c.hecho = !c.hecho; E.limpiarCelda(c);
-    } else if (herramienta && herramienta.tipo === 'borrar') {
-      if (cel) { S().celdas = S().celdas.filter(x => x.id !== cel.id); }
-    } else if (herramienta && herramienta.tipo === 'copiar') {
-      if (!copia) { if (!cel) { toast('Esa casilla está vacía'); return; } copia = { caballoId, fecha }; render(); return; }
-      const o = E.get.celda(copia.caballoId, copia.fecha);
-      if (o) E.upsertCelda(caballoId, fecha, { codigos: o.codigos.slice(), personaId: o.personaId, nota: o.nota, hecho: false });
-      copia = null;
-    } else if (personaSel) {
-      const c = cel || E.upsertCelda(caballoId, fecha, {});
-      c.personaId = c.personaId === personaSel ? '' : personaSel;
-      E.limpiarCelda(c);
-    } else {
-      celdaSheet(caballoId, fecha);
-      return;
-    }
-    E.save(); render();
-  }
-  function celdaSheet(caballoId, fecha) {
-    const c = E.get.caballo(caballoId);
-    const cel = E.get.celda(caballoId, fecha) || { codigos: [], personaId: '', nota: '', hecho: false };
-    openForm({
-      title: `${c.nombre} · ${fdate(fecha)}`, values: cel,
-      fields: [
-        { key: 'codigos', label: 'Actividad', type: 'acts' },
-        { key: 'personaId', label: 'Quién', type: 'select', options: opt(E.personasVisibles(), 'Sin asignar') },
-        { key: 'nota', label: 'Nota', ph: 'Opcional' },
-        { key: 'hecho', label: 'Hecho', type: 'toggle' }
-      ],
-      onSave: v => { E.upsertCelda(caballoId, fecha, { codigos: v.codigos, personaId: v.personaId, nota: v.nota, hecho: v.hecho }); },
-      onDelete: cel.id ? () => { S().celdas = S().celdas.filter(x => x.id !== cel.id); toast('Casilla vacía'); } : null,
-      deleteLabel: 'Vaciar casilla'
-    });
-  }
-
   /* ================= Vistas ================= */
   const vistas = {};
-
   function cabecera({ eyebrow = 'EquiLog', titulo, acciones = '', guardado = false }) {
     return `<header class="top"><div class="brand">
       <span class="mark">E</span>
@@ -559,91 +488,309 @@
       </div><div class="top-actions">${guardado ? `<span class="saved" id="saved"><i></i>Guardado</span>` : ''}${acciones}</div></header>`;
   }
 
-  /* ---------- Pizarra ---------- */
+  /* ================= Pizarra ================= */
+  let semana = F.weekStart(F.today());
+  let tool = null;            // {t:'code', id} | {t:'note'|'done'|'copy'|'erase'}
+  let copia = null;           // {caballoId, fecha}
+  let copiaMsg = '';
+  const botonDe = id => E.get.boton(id) || { id, codigo: id, nombre: id, color: '#6B655B' };
+  const codigosTexto = cel => (cel ? cel.codigos : []).map(id => (botonDe(id).codigo || '').toUpperCase());
+
+  function cellHTML(cel) {
+    if (!cel || (!cel.codigos.length && !cel.nota)) return '<span class="empty-dot" aria-hidden="true">·</span>';
+    const codes = cel.codigos.map((id, i) => {
+      const b = botonDe(id);
+      const hecho = (cel.hechos || []).includes(id);
+      const vet = E.esVet(b) ? `<em class="vet-indicator ${cel.vet ? 'complete' : ''}">${cel.vet ? '✓' : '?'}</em>` : '';
+      return `<span class="cell-code ${hecho ? 'is-done' : ''}" style="--c:${b.color}">${i ? '<b>+</b>' : ''}${hecho ? '<i>✓</i>' : ''}<span class="txt">${esc(b.codigo)}</span>${vet}</span>`;
+    }).join('');
+    return `${cel.codigos.length ? `<span class="cell-codes">${codes}</span>` : ''}${cel.nota ? `<span class="cell-note">${esc(cel.nota)}</span>` : ''}`;
+  }
+  function cellLabel(c, cel, fecha, i) {
+    const p = [c.nombre + ',', DIAS[i] + ' ' + F.parse(fecha).getDate() + ':'];
+    p.push(cel && cel.codigos.length ? cel.codigos.map(id => botonDe(id).nombre).join(' más ') : 'sin instrucciones');
+    if (cel && cel.codigos.some(id => E.esVet(botonDe(id)))) p.push(cel.vet ? 'Veterinario: ' + cel.vet : 'veterinario pendiente de explicar');
+    if (cel && (cel.hechos || []).length) p.push(cel.hechos.length + ' realizadas');
+    if (cel && cel.nota) p.push('Nota: ' + cel.nota);
+    return p.join(' ');
+  }
+  function hintInfo() {
+    if (!tool) return { badge: '✎', txt: 'Toca una casilla para abrir su editor, o elige un botón de arriba' };
+    if (tool.t === 'note') return { badge: '✎', txt: 'Toca una casilla para escribir o editar una nota' };
+    if (tool.t === 'done') return { badge: '✓', txt: 'Toca una casilla para marcar sus tareas realizadas' };
+    if (tool.t === 'erase') return { badge: '⌫', txt: 'Toca una casilla para borrar sus códigos y su nota' };
+    if (tool.t === 'copy') return { badge: '⧉', txt: copiaMsg || (copia ? 'Toca casillas, días o nombres de caballos para pegar' : 'Elige la casilla que quieres copiar'), clear: !!copia };
+    const b = botonDe(tool.id);
+    return { badge: b.codigo, txt: `Toca casillas para añadir o quitar ${b.nombre}`, color: b.color };
+  }
+  function elegirTool(t, id) {
+    const igual = tool && tool.t === t && tool.id === id;
+    tool = igual ? null : { t, id };
+    copia = null;
+    copiaMsg = t === 'copy' && !igual ? 'Elige la casilla que quieres copiar.' : '';
+    render();
+  }
+  function pegarEn(destinos) {
+    if (!copia) return;
+    const o = E.get.celda(copia.caballoId, copia.fecha);
+    if (!o) { copia = null; return; }
+    let n = 0;
+    destinos.forEach(d => {
+      if (d.caballoId === copia.caballoId && d.fecha === copia.fecha) return;
+      E.vaciarCelda(d.caballoId, d.fecha);
+      E.upsertCelda(d.caballoId, d.fecha, { codigos: o.codigos.slice(), hechos: [], nota: o.nota, vet: '' });
+      n++;
+    });
+    copiaMsg = n === 1 ? 'Casilla copiada · las tareas quedan pendientes' : `${n} casillas copiadas · las tareas quedan pendientes`;
+    E.save(); render();
+  }
+  function tocarCelda(hid, fecha) {
+    const cel = E.get.celda(hid, fecha);
+    if (!tool) { celdaSheet(hid, fecha); return; }
+    if (tool.t === 'note') { notaSheet(hid, fecha); return; }
+    if (tool.t === 'done') {
+      if (cel && cel.codigos.length) tareasSheet(hid, fecha);
+      else toast('Esa casilla no tiene tareas');
+      return;
+    }
+    if (tool.t === 'erase') { E.vaciarCelda(hid, fecha); E.save(); render(); return; }
+    if (tool.t === 'copy') {
+      if (!copia) {
+        if (!cel) { copiaMsg = 'Esa casilla está vacía. Elige una con planificación.'; render(); return; }
+        copia = { caballoId: hid, fecha };
+        copiaMsg = 'Origen elegido. Toca casillas, días o caballos para pegarlo.';
+        render(); return;
+      }
+      if (copia.caballoId === hid && copia.fecha === fecha) { copia = null; copiaMsg = 'Origen desmarcado. Elige otra casilla.'; render(); return; }
+      pegarEn([{ caballoId: hid, fecha }]); return;
+    }
+    const b = botonDe(tool.id);
+    if (E.esVet(b) && cel && cel.codigos.includes(tool.id)) { vetSheet(hid, fecha); return; }
+    E.toggleCodigo(hid, fecha, tool.id);
+    E.save(); render();
+  }
+  const tituloCelda = (hid, fecha) => `${(E.get.caballo(hid) || {}).nombre} · ${fdate(fecha)}`;
+  function notaSheet(hid, fecha) {
+    const cel = E.get.celda(hid, fecha) || { nota: '' };
+    openForm({
+      title: tituloCelda(hid, fecha), doneLabel: 'Guardar nota',
+      fields: [{ key: 'nota', label: 'Nota puntual', type: 'textarea', ph: 'Ej.: no montar, pequeña herida en la mano…' }],
+      values: cel,
+      onSave: v => { E.upsertCelda(hid, fecha, { nota: v.nota.slice(0, 240) }); },
+      onDelete: cel.nota ? () => { E.upsertCelda(hid, fecha, { nota: '' }); toast('Nota vaciada'); } : null,
+      deleteLabel: 'Vaciar nota'
+    });
+  }
+  function tareasSheet(hid, fecha) {
+    const body = document.createElement('div');
+    function draw() {
+      const cel = E.get.celda(hid, fecha) || { codigos: [], hechos: [] };
+      body.innerHTML = `<p class="small muted" style="margin:6px 4px 12px">Toca cada instrucción para marcarla o desmarcarla. Se guarda al instante.</p>
+        <div class="task-list">${cel.codigos.map(id => {
+          const b = botonDe(id), ok = (cel.hechos || []).includes(id);
+          return `<button type="button" class="${ok ? 'checked' : ''}" data-code="${id}" aria-pressed="${ok}" style="--c:${b.color}"><strong>${ok ? '✓' : esc(b.codigo)}</strong><span>${esc(b.nombre)}</span><em>${ok ? 'Hecho' : 'Pendiente'}</em></button>`;
+        }).join('')}</div>`;
+    }
+    body.addEventListener('click', e => {
+      const b = e.target.closest('[data-code]'); if (!b) return;
+      const cel = E.get.celda(hid, fecha); if (!cel) return;
+      const id = b.dataset.code;
+      cel.hechos = (cel.hechos || []).includes(id) ? cel.hechos.filter(x => x !== id) : (cel.hechos || []).concat([id]);
+      E.save(); draw(); render();
+    });
+    sheet({ title: tituloCelda(hid, fecha), body, cancelLabel: 'Cerrar' });
+    draw();
+  }
+  function vetSheet(hid, fecha) {
+    const cel = E.get.celda(hid, fecha) || { vet: '' };
+    openForm({
+      title: 'Veterinario · ' + tituloCelda(hid, fecha), doneLabel: 'Guardar',
+      fields: [
+        { key: 'vet', label: '¿Qué ha pasado?', type: 'textarea', req: true, ph: 'Ej.: ha venido por inflamación en la mano izquierda…' },
+        { key: 'guardarReg', label: 'Guardar también en el historial del caballo', type: 'toggle', def: true }
+      ],
+      values: cel,
+      onSave: v => {
+        const c = E.upsertCelda(hid, fecha, { vet: v.vet.slice(0, 700) });
+        if (v.guardarReg) {
+          const r = c.vetRegId && E.get.registro(c.vetRegId);
+          if (r) { r.nota = c.vet; r.fecha = fecha; }
+          else {
+            const nuevo = { id: E.uid('r'), tipo: 'veterinario', fecha, caballoId: hid, concepto: 'Veterinario', nota: c.vet, enlace: '' };
+            S().registros.push(nuevo);
+            c.vetRegId = nuevo.id;
+          }
+        }
+        toast('Detalle guardado');
+      }
+    });
+  }
+  function celdaSheet(hid, fecha) {
+    const cel = E.get.celda(hid, fecha) || { codigos: [], hechos: [], nota: '', vet: '' };
+    const todo = cel.codigos.length && cel.codigos.every(id => (cel.hechos || []).includes(id));
+    openForm({
+      title: tituloCelda(hid, fecha),
+      fields: [
+        { key: 'codigos', label: 'Personas y actividades', type: 'botones' },
+        { key: 'nota', label: 'Nota', ph: 'Opcional' },
+        { key: 'hecho', label: 'Todo hecho', type: 'toggle', def: todo }
+      ],
+      values: Object.assign({}, cel, { hecho: todo }),
+      onSave: v => {
+        const orden = E.ordenBotones();
+        const codigos = v.codigos.slice().sort((a, b) => orden.indexOf(a) - orden.indexOf(b));
+        E.upsertCelda(hid, fecha, { codigos, nota: v.nota, hechos: v.hecho ? codigos.slice() : (cel.hechos || []).filter(k => codigos.includes(k)) });
+      },
+      onDelete: cel.id ? () => { E.vaciarCelda(hid, fecha); toast('Casilla vacía'); } : null,
+      deleteLabel: 'Vaciar casilla'
+    });
+  }
+  function botonesSheet() {
+    const body = document.createElement('div');
+    let filas = E.state.personas.map(p => ({ ...p, grupo: 'persona' })).concat(E.state.actividades.map(a => ({ ...a, grupo: 'actividad' })));
+    function leer() {
+      return $$('.tool-editor-row', body).map((r, i) => {
+        const [cod, nom] = $$('input[type=text]', r);
+        return Object.assign({}, filas[i], {
+          codigo: cod.value.trim().toUpperCase().slice(0, 4),
+          nombre: nom.value.trim(),
+          grupo: $('select', r).value,
+          color: $('input[type=color]', r).value
+        });
+      });
+    }
+    function draw() {
+      body.innerHTML = `<p class="small muted" style="margin:6px 4px 12px">El código es lo que se ve en la casilla. El nombre identifica el botón en la barra.</p>
+        ${filas.map((f, i) => `<div class="tool-editor-row" data-i="${i}">
+          <input type="text" class="code-input" maxlength="4" value="${esc(f.codigo || '')}" aria-label="Código">
+          <input type="text" value="${esc(f.nombre || '')}" aria-label="Nombre" placeholder="Nombre">
+          <select aria-label="Grupo"><option value="persona" ${f.grupo === 'persona' ? 'selected' : ''}>Persona</option><option value="actividad" ${f.grupo === 'actividad' ? 'selected' : ''}>Actividad</option></select>
+          <input type="color" class="swatch-mini" value="${esc(f.color || '#275F51')}" aria-label="Color">
+          <button type="button" class="delete-tool" data-del="${i}" aria-label="Eliminar ${esc(f.nombre || f.codigo || '')}">×</button>
+        </div>`).join('')}
+        <button type="button" class="add-tool" data-add>＋ Añadir botón</button>`;
+    }
+    body.addEventListener('click', e => {
+      const del = e.target.closest('[data-del]');
+      if (del) { filas = leer(); filas.splice(+del.dataset.del, 1); draw(); }
+      if (e.target.closest('[data-add]')) { filas = leer().concat([{ codigo: '', nombre: '', grupo: 'actividad', color: '#275F51', visible: true }]); draw(); }
+    });
+    sheet({
+      title: 'Editar botones', body, doneLabel: 'Guardar botones',
+      done: () => {
+        const v = leer();
+        if (v.some(f => !f.codigo || !f.nombre)) { toast('Cada botón necesita código y nombre'); return false; }
+        if (new Set(v.map(f => f.codigo)).size !== v.length) { toast('Usa códigos distintos'); return false; }
+        const usados = new Set(v.map(f => f.id).filter(Boolean));
+        S().personas = v.filter(f => f.grupo === 'persona').map(f => ({ id: f.id || E.uid('per'), codigo: f.codigo, nombre: f.nombre, color: f.color, rol: f.rol || '', visible: f.visible !== false }));
+        S().actividades = v.filter(f => f.grupo === 'actividad').map(f => ({ id: f.id || E.uid('a'), codigo: f.codigo, nombre: f.nombre, color: f.color, visible: f.visible !== false }));
+        S().celdas.forEach(z => {
+          z.codigos = z.codigos.filter(id => usados.has(id));
+          z.hechos = (z.hechos || []).filter(id => usados.has(id));
+          E.limpiarCelda(z);
+        });
+        S().caballos.forEach(h => { if (h.responsableId && !usados.has(h.responsableId)) h.responsableId = ''; });
+        if (tool && tool.t === 'code' && !usados.has(tool.id)) tool = null;
+        E.save(); render(); toast('Botones guardados');
+        return true;
+      }
+    });
+    draw();
+  }
+  function repetirSemana() {
+    const ant = F.addWeeks(semana, -1);
+    const ids = E.caballosPizarra().map(c => c.id);
+    const origen = S().celdas.filter(z => ids.includes(z.caballoId) && z.fecha >= ant && z.fecha < semana);
+    if (!origen.length) { copiaMsg = 'La semana anterior no tiene planificación para copiar.'; render(); return; }
+    let n = 0;
+    origen.forEach(z => {
+      const f = F.addWeeks(z.fecha, 1);
+      if (E.get.celda(z.caballoId, f)) return;
+      E.upsertCelda(z.caballoId, f, { codigos: z.codigos.slice(), hechos: [], nota: z.nota, vet: '' });
+      n++;
+    });
+    E.save(); render();
+    toast(n ? `${n} casillas traídas de la semana anterior` : 'No había casillas libres');
+  }
+
   vistas.pizarra = function () {
     const t = F.today();
     const dias = [...Array(7)].map((_, i) => F.addDays(semana, i));
     const caballos = E.caballosPizarra();
     const personas = E.personasVisibles();
     const acts = E.actividadesVisibles();
-    const m = modoTexto();
-    const rango = `${F.parse(semana).getDate()}–${F.parse(dias[6]).getDate()} ${limpia(MS.format(F.parse(dias[6])))} ${F.parse(dias[6]).getFullYear()}`;
-    const tag = (on, extra, contenido, data) => `<button type="button" class="tag ${on ? 'on' : ''} ${extra}" ${data}>${contenido}</button>`;
+    const h = hintInfo();
+    const fin = dias[6];
+    const mes = m => limpia(MS.format(F.parse(m)));
+    const rango = F.parse(semana).getMonth() === F.parse(fin).getMonth()
+      ? `${F.parse(semana).getDate()}–${F.parse(fin).getDate()} ${mes(fin)} ${F.parse(fin).getFullYear()}`
+      : `${F.parse(semana).getDate()} ${mes(semana)} – ${F.parse(fin).getDate()} ${mes(fin)} ${F.parse(fin).getFullYear()}`;
+    const pegando = tool && tool.t === 'copy' && copia;
+    const btn = b => {
+      const sel = tool && tool.t === 'code' && tool.id === b.id;
+      return `<button type="button" class="tool ${sel ? 'selected' : ''}" style="--c:${b.color}" data-code="${b.id}" aria-pressed="${!!sel}"><strong>${esc(b.codigo)}</strong><span>${esc(b.nombre)}</span></button>`;
+    };
+    const herr = (k, simbolo, etiqueta) => `<button type="button" class="tool plain ${tool && tool.t === k ? 'selected' : ''}" data-tool="${k}" aria-pressed="${!!(tool && tool.t === k)}"><strong>${simbolo}</strong><span>${etiqueta}</span></button>`;
     return `<div class="wrap">
-      ${cabecera({
-        titulo: 'Pizarra semanal', guardado: true,
-        acciones: `<button class="btn" data-nuevo-registro>${ic('plus', 's')} Registro</button><button class="btn dark" data-nuevo-caballo>${ic('plus', 's')} Caballos</button>`
-      })}
-      <div class="card legend">
-        <div><h3>Personas</h3><div class="grp">
-          ${personas.map(p => tag(personaSel === p.id, '', `<span class="ini" style="--c:${p.color}">${esc(p.inicial || iniciales(p.nombre))}</span><span class="nm">${esc(p.nombre)}</span>`, `data-persona="${p.id}" style="--c:${p.color}" aria-pressed="${personaSel === p.id}"`)).join('')}
-          ${tag(false, 'tool', `${ic('plus', 's')} Persona`, 'data-nueva-persona')}
+      ${cabecera({ titulo: 'Pizarra semanal', guardado: true, acciones: `<button class="btn" data-nuevo-registro>${ic('plus', 's')} Registro</button><button class="btn dark" data-nuevo-caballo>${ic('plus', 's')} Caballos</button>` })}
+      <section class="toolbar" aria-label="Botones de la pizarra">
+        <div class="tool-group"><p>Personas</p><div class="tool-row">
+          ${personas.map(btn).join('')}
+          <button type="button" class="tool plain" data-nueva-persona aria-label="Nueva persona"><strong>＋</strong><span>Persona</span></button>
         </div></div>
-        <div><h3>Actividades</h3><div class="grp">
-          ${acts.map(a => tag(herramienta && herramienta.tipo === 'act' && herramienta.id === a.id, '', `<span class="cod" style="--c:${a.color}">${esc(a.codigo)}</span><span class="nm">${esc(a.nombre)}</span>`, `data-act="${a.id}" style="--c:${a.color}" aria-pressed="${herramienta && herramienta.id === a.id}"`)).join('')}
-          ${tag(herramienta && herramienta.tipo === 'hecho', 'tool', `${ic('check', 's')} Hecho`, 'data-tool="hecho"')}
-          ${tag(herramienta && herramienta.tipo === 'copiar', 'tool', `${ic('copy', 's')} Copiar`, 'data-tool="copiar"')}
-          ${tag(herramienta && herramienta.tipo === 'borrar', 'tool', `${ic('eraser', 's')} Borrar`, 'data-tool="borrar"')}
-          ${tag(false, 'tool', `${ic('gear', 's')} Editar botones`, 'data-editar-botones')}
+        <div class="tool-group activities"><p>Actividades</p><div class="tool-row">
+          ${acts.map(btn).join('')}
+          ${herr('note', '✎', 'Nota')}${herr('done', '✓', 'Hecho')}${herr('copy', '⧉', 'Copiar')}${herr('erase', '⌫', 'Borrar')}
+          <button type="button" class="tool plain" data-editar-botones aria-label="Editar botones"><strong>⚙</strong><span>Editar botones</span></button>
         </div></div>
-      </div>
-      <div class="weekbar">
-        <button class="btn" data-w="-1">${ic('back', 's')} Anterior</button>
-        <button class="btn ${semana === F.weekStart(t) ? 'on' : ''}" data-w="0">${ic('dot', 's')} Hoy</button>
-        <button class="btn" data-w="1">Siguiente ${ic('chev', 's')}</button>
-        <button class="btn" data-repetir>${ic('repeat', 's')} Repetir anterior</button>
-        <span class="range">${esc(rango)}</span>
-      </div>
-      ${caballos.length ? `<div class="board-wrap"><table class="board"><thead><tr><th class="cab" scope="col">Caballo</th>
-        ${dias.map((d, i) => `<th scope="col" class="${d === t ? 'hoy' : ''}">${DIAS[i].toUpperCase()}<b>${F.parse(d).getDate()}</b>${d === t ? '<span class="hoy-badge">HOY</span>' : ''}</th>`).join('')}</tr></thead>
-        <tbody>${caballos.map(c => `<tr><th class="cab" scope="row"><button type="button" class="cabbtn" data-caballo="${c.id}"><span class="nm">${esc(c.nombre)}</span>${ic('edit', 's')}</button></th>
+      </section>
+      <nav class="week-nav" aria-label="Navegación semanal">
+        <button data-w="-1" aria-label="Semana anterior">← <span class="lbl">Anterior</span></button>
+        <button class="today-button" data-w="0" aria-label="Semana de hoy">◎ <span class="lbl">Hoy</span></button>
+        <button data-w="1" aria-label="Semana siguiente"><span class="lbl">Siguiente</span> →</button>
+        <button class="repeat-week" data-repetir aria-label="Repetir semana anterior">↻ <span class="lbl">Repetir anterior</span></button>
+        <p>${esc(rango)}</p>
+      </nav>
+      ${caballos.length ? `<section class="board-card" aria-label="Planificación del ${esc(rango)}">
+        <div class="board-grid board-head">
+          <div class="horse-heading">Caballo</div>
+          ${dias.map((d, i) => `<button class="day-heading ${d === t ? 'is-today' : ''} ${pegando ? 'copy-target' : ''}" ${pegando ? `data-dia="${d}"` : 'disabled'} aria-label="${pegando ? 'Copiar en todo el ' + DIAS[i] : DIAS[i] + ' ' + F.parse(d).getDate()}"><span>${DIAS[i].toUpperCase()}</span><strong>${F.parse(d).getDate()}</strong>${d === t ? '<em>HOY</em>' : ''}</button>`).join('')}
+        </div>
+        ${caballos.map(c => `<div class="board-grid board-row">
+          <button type="button" class="horse-name ${pegando ? 'copy-target' : ''}" data-caballo="${c.id}" aria-label="${pegando ? 'Copiar en toda la semana de ' + esc(c.nombre) : 'Abrir ficha de ' + esc(c.nombre)}"><span>${esc(c.nombre)}</span><em>${pegando ? '⧉' : '✎'}</em></button>
           ${dias.map((d, i) => {
             const cel = E.get.celda(c.id, d);
-            const marcada = copia && copia.caballoId === c.id && copia.fecha === d;
-            return `<td class="${d === t ? 'hoy' : i > 4 ? 'we' : ''}"><button type="button" class="cell ${marcada ? 'marked' : ''}" data-c="${c.id}" data-d="${d}" aria-label="${esc(cellLabel(c, cel, d, i))}">${cellHTML(c, cel, d)}</button></td>`;
-          }).join('')}</tr>`).join('')}</tbody></table></div>
-        <p class="hint"><span class="badge" style="background:${m.color}">${esc(m.badge)}</span>${esc(m.txt)}</p>`
+            const todo = cel && cel.codigos.length && cel.codigos.every(id => (cel.hechos || []).includes(id));
+            const src = copia && copia.caballoId === c.id && copia.fecha === d;
+            const cls = [d === t ? 'is-today' : '', cel && cel.codigos.length ? 'has-codes' : '', todo ? 'all-done' : '', cel && cel.nota ? 'has-note' : '', src ? 'copy-source' : ''].filter(Boolean).join(' ');
+            return `<button type="button" class="cell ${cls}" data-c="${c.id}" data-d="${d}" aria-label="${esc(cellLabel(c, cel, d, i))}">${cellHTML(cel)}</button>`;
+          }).join('')}
+        </div>`).join('')}
+      </section>
+      <footer class="hint"><span class="selected-code" ${h.color ? `style="background:${h.color}"` : ''}>${esc(h.badge)}</span><p>${esc(h.txt)}</p>${h.clear ? '<button type="button" class="clear-copy" data-clear-copy>Cambiar origen</button>' : ''}</footer>`
       : vacio('horse', 'Sin caballos todavía', 'Crea el primero y aparecerá aquí.', '<button class="btn dark" data-nuevo-caballo>Crear caballo</button>')}
     </div>`;
   };
   vistas.pizarra.after = function (root) {
     root.addEventListener('click', e => {
-      const b = e.target;
-      const act = b.closest('[data-act]'), per = b.closest('[data-persona]'), tool = b.closest('[data-tool]');
-      const cell = b.closest('[data-c][data-d]'), cab = b.closest('[data-caballo]'), w = b.closest('[data-w]');
-      if (act) { const id = act.dataset.act; herramienta = (herramienta && herramienta.tipo === 'act' && herramienta.id === id) ? null : { tipo: 'act', id }; copia = null; render(); }
-      else if (tool) { const k = tool.dataset.tool; herramienta = (herramienta && herramienta.tipo === k) ? null : { tipo: k }; copia = null; render(); }
-      else if (per) { personaSel = personaSel === per.dataset.persona ? null : per.dataset.persona; render(); }
+      const code = e.target.closest('[data-code]'), herr = e.target.closest('[data-tool]');
+      const cell = e.target.closest('[data-c][data-d]'), cab = e.target.closest('[data-caballo]');
+      const dia = e.target.closest('[data-dia]'), w = e.target.closest('[data-w]');
+      if (code) elegirTool('code', code.dataset.code);
+      else if (herr) elegirTool(herr.dataset.tool);
       else if (cell) tocarCelda(cell.dataset.c, cell.dataset.d);
-      else if (cab) location.hash = '#/caballo/' + cab.dataset.caballo;
-      else if (w) {
-        const n = +w.dataset.w;
-        semana = n === 0 ? F.weekStart(F.today()) : F.addWeeks(semana, n);
-        render();
+      else if (dia) pegarEn(E.caballosPizarra().map(c => ({ caballoId: c.id, fecha: dia.dataset.dia })));
+      else if (cab) {
+        if (tool && tool.t === 'copy' && copia) pegarEn([...Array(7)].map((_, i) => ({ caballoId: cab.dataset.caballo, fecha: F.addDays(semana, i) })));
+        else location.hash = '#/caballo/' + cab.dataset.caballo;
       }
-      else if (b.closest('[data-repetir]')) repetirSemana();
-      else if (b.closest('[data-editar-botones]')) location.hash = '#/config/actividades';
-      else if (b.closest('[data-nueva-persona]')) personaForm();
+      else if (w) { const n = +w.dataset.w; semana = n === 0 ? F.weekStart(F.today()) : F.addWeeks(semana, n); copia = null; render(); }
+      else if (e.target.closest('[data-repetir]')) repetirSemana();
+      else if (e.target.closest('[data-editar-botones]')) botonesSheet();
+      else if (e.target.closest('[data-nueva-persona]')) personaForm();
+      else if (e.target.closest('[data-clear-copy]')) { copia = null; copiaMsg = 'Elige otra casilla de origen.'; render(); }
     });
-    const wrap = $('.board-wrap', root), th = $('thead th.hoy', root);
-    if (wrap && th) wrap.scrollLeft = Math.max(0, th.offsetLeft - 150 - 80);
   };
-  function repetirSemana() {
-    const ant = F.addWeeks(semana, -1);
-    const ids = E.caballosPizarra().map(c => c.id);
-    const origen = S().celdas.filter(z => ids.includes(z.caballoId) && z.fecha >= ant && z.fecha < semana);
-    if (!origen.length) { toast('La semana anterior está vacía'); return; }
-    if (!confirm('¿Copiar la planificación de la semana anterior a esta semana? Las casillas que ya tengan algo no se tocan.')) return;
-    let n = 0;
-    origen.forEach(z => {
-      const f = F.addWeeks(z.fecha, 1);
-      if (E.get.celda(z.caballoId, f)) return;
-      E.upsertCelda(z.caballoId, f, { codigos: z.codigos.slice(), personaId: z.personaId, nota: '', hecho: false });
-      n++;
-    });
-    E.save(); render();
-    toast(n ? n + ' casillas copiadas' : 'No había casillas libres');
-  }
 
   /* ---------- Inicio ---------- */
   function hoyImporta() {
@@ -651,7 +798,12 @@
     const cabs = E.caballosPizarra();
     const celdasHoy = S().celdas.filter(z => z.fecha === t);
     E.recordatorios(true).filter(r => r.fecha <= t).forEach(r => it.push({ i: 'bell', tone: 'danger', t: esc(r.concepto), s: `${esc(cName(r.caballoId))} · ${r.fecha < t ? 'vencido ' : ''}${fdate(r.fecha)}`, reg: r.id }));
-    celdasHoy.filter(z => z.codigos.includes('VET') || z.codigos.includes('H')).forEach(z => it.push({ i: z.codigos.includes('VET') ? 'vet' : 'hammer', tone: 'warn', t: `${esc(cName(z.caballoId))}: ${z.codigos.includes('VET') ? 'veterinario' : 'herrador'} hoy`, s: esc(z.nota || 'Anotado en la pizarra'), hash: '#/caballo/' + z.caballoId }));
+    celdasHoy.forEach(z => {
+      const cods = codigosTexto(z);
+      if (!cods.includes('VET') && !cods.includes('H')) return;
+      const esV = cods.includes('VET');
+      it.push({ i: esV ? 'vet' : 'hammer', tone: 'warn', t: `${esc(cName(z.caballoId))}: ${esV ? 'veterinario' : 'herrador'} hoy`, s: esc(z.vet || z.nota || 'Anotado en la pizarra'), hash: '#/caballo/' + z.caballoId });
+    });
     E.recordatorios(true).filter(r => r.fecha > t && r.fecha <= F.addDays(t, 7)).forEach(r => it.push({ i: 'bell', tone: 'warn', t: esc(r.concepto), s: `${esc(cName(r.caballoId))} · ${fdate(r.fecha)}`, reg: r.id }));
     const sin = cabs.filter(c => !celdasHoy.some(z => z.caballoId === c.id && (z.codigos.length || z.nota)));
     if (sin.length && cabs.length) it.push({ i: 'grid', tone: '', t: sin.length === 1 ? `${esc(sin[0].nombre)} sin plan hoy` : `${sin.length} caballos sin plan hoy`, s: 'Pizarra sin completar', hash: '#/pizarra' });
@@ -678,9 +830,9 @@
       ${sec('La pizarra de hoy', '<a class="link" href="#/pizarra">Ver semana</a>')}
       ${cabs.length ? `<div class="list">${cabs.map(c => {
         const z = E.get.celda(c.id, t);
-        const codes = z && z.codigos.length ? z.codigos.map(id => { const a = actDe(id); return `<span class="code" style="--c:${a.color};font-weight:800">${esc(a.codigo)}</span>`; }).join(' · ') : '<span class="muted">Sin actividad</span>';
-        const per = z && E.get.persona(z.personaId);
-        return row({ lead: hthumb(c), t: esc(c.nombre), s: codes + (z && z.nota ? ' · ' + esc(z.nota) : ''), end: per ? pav(per, 26) : (z && z.hecho ? `<span class="chip ok">${ic('check', 's')} Hecho</span>` : ''), data: `data-celda="${c.id}"` });
+        const codes = z && z.codigos.length ? z.codigos.map(id => { const b = botonDe(id); return `<span style="color:${b.color};font-weight:800">${esc(b.codigo)}</span>`; }).join(' + ') : '<span class="muted">Sin actividad</span>';
+        const todo = z && z.codigos.length && z.codigos.every(id => (z.hechos || []).includes(id));
+        return row({ lead: hthumb(c), t: esc(c.nombre), s: codes + (z && z.nota ? ' · ' + esc(z.nota) : ''), end: todo ? `<span class="chip ok">${ic('check', 's')} Hecho</span>` : '', data: `data-celda="${c.id}"` });
       }).join('')}</div>` : vacio('horse', 'Sin caballos', 'Crea el primero desde Caballos.')}
       ${sec('Próximos recordatorios', '<a class="link" href="#/registros">Ver todos</a>')}
       ${prox.length ? `<div class="list">${prox.map(r => regRow(r)).join('')}</div>` : `<div class="card pad muted">Ningún recordatorio pendiente.</div>`}
@@ -731,7 +883,7 @@
       <div class="card" style="display:flex;overflow-x:auto">${dias.map((d, i) => {
         const z = E.get.celda(c.id, d);
         return `<button type="button" class="cell" data-celda="${c.id}" data-d="${d}" style="min-width:54px;border-right:1px solid var(--line-2)" aria-label="${esc(cellLabel(c, z, d, i))}">
-          <span class="small muted">${DIAS[i]} ${F.parse(d).getDate()}</span>${cellHTML(c, z, d)}</button>`;
+          <span class="small muted">${DIAS[i]} ${F.parse(d).getDate()}</span>${cellHTML(z)}</button>`;
       }).join('')}</div>
       ${sec('Próximos recordatorios')}
       ${recs.length ? `<div class="list">${recs.map(r => regRow(r, false)).join('')}</div>` : '<div class="card pad muted">Ninguno pendiente.</div>'}
@@ -868,7 +1020,7 @@
   vistas['config/personas'] = function () {
     return listaConfig({
       titulo: 'Personas', tipo: 'personas',
-      items: S().personas.map(p => `<div class="row">${pav(p, 38)}<span class="body"><span class="t">${esc(p.nombre)}</span><span class="s">${esc(p.inicial || '')}${p.rol ? ' · ' + esc(p.rol) : ''}${p.visible === false ? ' · oculta' : ''}</span></span>
+      items: S().personas.map(p => `<div class="row">${pav(p, 38)}<span class="body"><span class="t">${esc(p.nombre)}</span><span class="s">${esc(p.codigo || '')}${p.rol ? ' · ' + esc(p.rol) : ''}${p.visible === false ? ' · oculta' : ''}</span></span>
         <span class="end"><span class="ord"><button type="button" data-vis="${p.id}" aria-label="Mostrar u ocultar">${ic(p.visible === false ? 'eyeoff' : 'eye', 's')}</button><button type="button" data-edit="${p.id}" aria-label="Editar">${ic('edit', 's')}</button></span></span></div>`).join('')
     });
   };
@@ -916,22 +1068,26 @@
     if (vistas[h]) return { v: h, id: null };
     return { v: 'inicio', id: null };
   }
+  let atado = false;
   function render() {
     const { v, id } = ruta();
     const fn = vistas[v] || vistas.inicio;
     const activa = v === 'caballo' ? 'caballos' : v.startsWith('config/') ? 'mas' : v;
     app().innerHTML = fn(id) + navHTML(activa);
     document.title = 'EquiLog · ' + (v === 'pizarra' ? 'Pizarra' : cap(v.replace('config/', '')));
-    const root = app();
+    const root = $('.wrap', app()) || app();
     if (fn.after) fn.after(root, id);
-    root.addEventListener('click', e => {
-      if (e.target.closest('[data-nuevo-registro]')) {
-        const b = e.target.closest('[data-nuevo-registro]');
-        registroSheet(b.dataset.cab ? { caballoId: b.dataset.cab } : {});
-      }
-      if (e.target.closest('[data-nuevo-caballo]')) caballoForm();
-      if (e.target.closest('[data-atras]')) { if (!location.hash.startsWith('#/caballo/')) location.hash = '#/mas'; }
-    });
+    if (!atado) {
+      atado = true;
+      app().addEventListener('click', e => {
+        if (e.target.closest('[data-nuevo-registro]')) {
+          const b = e.target.closest('[data-nuevo-registro]');
+          registroSheet(b.dataset.cab ? { caballoId: b.dataset.cab } : {});
+        }
+        if (e.target.closest('[data-nuevo-caballo]')) caballoForm();
+        if (e.target.closest('[data-atras]')) { if (!location.hash.startsWith('#/caballo/')) location.hash = '#/mas'; }
+      });
+    }
     pintarEstado();
   }
   function pintarEstado() {
