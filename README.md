@@ -1,43 +1,47 @@
-# EquiLog — pizarra semanal como interfaz principal
+# EquiLog — la pizarra semanal como pantalla principal
 
-Esta versión mantiene la arquitectura original Vite + Firebase de EquiLog y adapta la lógica visual y funcional de la pizarra semanal v16 al mismo modelo de datos. No incorpora Next.js ni D1 y no crea una segunda base de datos.
+Al entrar en una cuadra, EquiLog abre directamente la **pizarra semanal**: caballos en
+la columna izquierda, lunes a domingo en las siete columnas, y desde ahí se organiza
+la semana, se editan y añaden caballos, se registran salud/gastos/recordatorios y se
+resuelven las actuaciones veterinarias.
 
-## Uso diario
+## Estructura del código
 
-Al abrir una cuadra se entra directamente en la pizarra semanal. La navegación principal queda reducida a:
+| Archivo | Qué es |
+| --- | --- |
+| `index.html` | Cascarón: pantallas de acceso, cabecera, paneles y navegación. |
+| `public/legacy-app.js` | **Única** fuente real de la aplicación clásica (fichas, salud, gastos, equipo, estadísticas…). Se sirve tal cual, sin empaquetar. |
+| `public/pizarra.js` | Motor de la pizarra semanal. Se carga después de `legacy-app.js` y comparte su ámbito global (`D`, `V`, `save()`, `render()`…). |
+| `src/main.js` | Punto de entrada de Vite: estilos + arranque de Firebase. |
+| `src/firebase.js` | Configuración de Firebase y expositor de `window._FB`. |
+| `src/styles.css` | Estilos de la aplicación clásica. |
+| `src/pizarra.css` | Estilos de la pizarra (clases con prefijo `pz-`). |
 
-- Pizarra
-- Registro
-- Caballos
-- Más
+> Antes existían dos copias de `legacy-app.js` (`src/` y `public/`). Vite solo ejecutaba
+> la de `public/`; la de `src/` estaba obsoleta y se ha eliminado. **Edita siempre
+> `public/legacy-app.js`.**
 
-Las funciones antiguas de salud, gastos, equipo, alertas, estadísticas, informes y gestión avanzada se conservan y siguen usando el mismo objeto de datos de Firebase.
+## Datos
 
-## Pizarra
+Todo vive en Firebase, en el documento `stables/{cuadraId}/data/main`, igual que antes.
+La pizarra añade a ese mismo documento:
 
-- Caballos activos + lunes a domingo en una única cuadrícula responsive.
-- Botones configurables de personas y actividades.
-- Añadir/quitar actividades con un toque.
-- Nota por casilla.
-- Estado Hecho individual por actividad.
-- Copiar una casilla a otra, a toda la semana de un caballo o a todos los caballos de un día.
-- Borrar casilla con confirmación cuando contiene información relevante.
-- Repetir semana anterior sin copiar estados completados ni sobrescribir casillas ya ocupadas.
-- Indicador Guardando / Guardado / Sin conexión.
-- VET en dos pasos: primer toque deja `VET ?`; segundo toque abre el detalle y lo integra con Salud y, si procede, Gastos y revisión posterior.
+- `boardTools` — botones de personas y actividades de la cuadra.
+- `weeklyPlans` — `{hid, date, activities[], done[], note, vet}`.
+- En cada caballo: `active`, `status`, `location`. El **orden** de la pizarra es el orden
+  del array `horses`, compartido por todos los usuarios de la cuadra.
 
-## Registro rápido
+Los planes antiguos (que guardaban ids de actividad) se convierten a códigos
+automáticamente la primera vez que se abre la cuadra.
 
-El registro rápido permite seleccionar uno o varios caballos y crear:
+## Funciones clásicas
 
-- Salud, con revisión y gasto opcionales.
-- Gastos.
-- Recordatorios, reutilizando el sistema de tareas/agenda de EquiLog.
+No se ha eliminado ninguna. Las que no son de uso diario salen de la navegación
+principal y se abren desde el botón `•••` (Más) de la pizarra o desde la ficha del
+caballo: resumen de inicio, tareas del día, alertas, equipo y calendario, cuadra,
+estadísticas, informes, liquidaciones, pizarras de caminador y paddocks, pedigrí.
 
-## Caballos
+## Publicación
 
-Desde la pizarra se pueden añadir, editar, activar/desactivar y reordenar caballos. Pulsar directamente el nombre de un caballo abre su edición rápida. Los datos avanzados siguen disponibles en la ficha completa.
-
-## Arquitectura
-
-`public/legacy-app.js` es ahora la única fuente del script clásico de EquiLog. Se eliminó la copia duplicada de `src/legacy-app.js`, que Vite no estaba ejecutando. Firebase continúa siendo el sistema único de autenticación y persistencia.
+Sube el contenido de esta carpeta al repositorio y pulsa `Commit changes`.
+GitHub Actions publica la versión automáticamente.
