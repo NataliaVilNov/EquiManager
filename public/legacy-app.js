@@ -413,7 +413,7 @@ window._fbSwitchStable = async function(stableId){
     const userNameEl=document.getElementById('header-user-name');
     if(userNameEl)userNameEl.textContent=(user.displayName||user.email||'').split(' ')[0];
     showScreen('app');
-    V={name:'boards',boardWeek:boardStartOfWeek(td())};render();
+    V={name:'board',boardWeek:boardStartOfWeek(td())};render();
   }catch(e){
     console.error('_fbSwitchStable:',e);
     try{await setDoc(doc(fb.db,'users',user.uid),{lastStable:null},{merge:true});}catch(_e){}
@@ -1004,26 +1004,35 @@ function cleanForFirestore(value){
   return value;
 }
 
+// Estado de guardado: lo consume el indicador de la pizarra (Guardado / Guardando… / Sin conexión).
+function setSaveStatus(state){
+  window._EQ_SAVE_STATUS=state;
+  try{document.dispatchEvent(new CustomEvent('equilog-save-status',{detail:state}));}catch(e){}
+}
+
 function save(){
-  // Debounce saves to Firestore (250ms) y muestra el estado real en la pizarra.
-  if(typeof boardSetSaveState==='function')boardSetSaveState('saving');
+  // Debounce saves to Firestore (250ms)
   if(_saveTimeout)clearTimeout(_saveTimeout);
+  setSaveStatus('saving');
   _saveTimeout=setTimeout(async()=>{
     const fb=getFB();const sid=window._ACTIVE_STABLE_ID;
     const cleanD=cleanForFirestore(D);
     D=cleanD;
     if(!fb||!sid){
+      // Fallback to localStorage if Firebase not ready
       try{localStorage.setItem(SK,JSON.stringify(cleanD));}catch(e){}
-      if(typeof boardSetSaveState==='function')boardSetSaveState('offline');
+      setSaveStatus('offline');
       return;
     }
     try{
       const {doc,setDoc}=fb;
       await setDoc(doc(fb.db,'stables',sid,'data','main'),cleanD);
-      if(typeof boardSetSaveState==='function')boardSetSaveState('saved');
+      setSaveStatus('saved');
     }catch(e){
-      if(typeof boardSetSaveState==='function')boardSetSaveState('offline');
+      // Nunca fingimos que está guardado: el indicador queda en error.
+      setSaveStatus('error');
       toast('Error al guardar: '+e.message);
+      // Fallback
       try{localStorage.setItem(SK,JSON.stringify(cleanD));}catch(e2){}
     }
   },250);
@@ -1031,7 +1040,7 @@ function save(){
 
 let D=load();
 ["horses","trainings","health","expenses","team","tasks","ctasks","cexpenses","salerts","templates","absences"].forEach(k=>{if(!D[k])D[k]=[]});
-let V={name:"boards",boardWeek:boardStartOfWeek(td())};
+let V={name:"home"};
 
 function sanA(){
   return D.health.filter(r=>r.nxt).flatMap(r=>{
@@ -1251,242 +1260,240 @@ function rHome(){
 
 
 /* ============================================================
-   EQUILOG — PIZARRA SEMANAL PRINCIPAL
-   Adaptada de la pizarra v16 a la arquitectura Firebase existente.
-   La pizarra usa el mismo objeto D que Salud, Gastos y Tareas.
+   PIZARRAS DE CUADRA — planificación semanal, caminador y paddocks
    ============================================================ */
 function boardDefaults(){
   return {
-    schemaVersion:2,
     activities:[
-      {id:'persona_n',code:'N',label:'Natalia',category:'person',tone:'mint'},
-      {id:'persona_a',code:'A',label:'Ale',category:'person',tone:'sky'},
-      {id:'persona_i',code:'I',label:'Isa',category:'person',tone:'lilac'},
-      {id:'persona_s',code:'S',label:'Sonso',category:'person',tone:'sand'},
-      {id:'caminador',code:'C',label:'Caminador',category:'activity',tone:'sage'},
-      {id:'cuerda',code:'L',label:'Cuerda',category:'activity',tone:'rose'},
-      {id:'paseo_mano',code:'PM',label:'Paseo mano',category:'activity',tone:'ochre'},
-      {id:'paddock',code:'P',label:'Paddock',category:'activity',tone:'forest'},
-      {id:'vet',code:'VET',label:'Veterinario',category:'activity',tone:'vet'},
-      {id:'concurso',code:'CON',label:'Concurso',category:'activity',tone:'competition'}
+      {id:'monta',code:'M',label:'Montar',tone:'green'},
+      {id:'paseo_mano',code:'PM',label:'Paseo de la mano',tone:'blue'},
+      {id:'cuerda',code:'CR',label:'Cuerda',tone:'purple'},
+      {id:'paddock',code:'P',label:'Paddock',tone:'amber'},
+      {id:'caminador',code:'C',label:'Caminador',tone:'teal'},
+      {id:'descanso',code:'D',label:'Descanso',tone:'gray'}
+    ],
+    periodicColumns:[
+      {id:'herraje',label:'Herraje',tone:'amber'},
+      {id:'desparasitacion',label:'Desparasitación',tone:'green'},
+      {id:'dientes',label:'Dientes',tone:'blue'}
+    ],
+    walkers:[{id:'walker_main',name:'Caminador principal',capacity:4,slots:[
+      {id:'w0800',start:'08:00',end:'09:00'},
+      {id:'w0900',start:'09:00',end:'10:00'},
+      {id:'w1700',start:'17:00',end:'18:00'}
+    ]}],
+    paddocks:[
+      {id:'paddock_1',name:'Paddock 1',capacity:1},
+      {id:'paddock_2',name:'Paddock 2',capacity:1},
+      {id:'paddock_3',name:'Paddock 3',capacity:1},
+      {id:'paddock_4',name:'Paddock 4',capacity:1}
+    ],
+    paddockSlots:[
+      {id:'p0830',start:'08:30',end:'10:30'},
+      {id:'p1030',start:'10:30',end:'12:30'},
+      {id:'p1230',start:'12:30',end:'13:30'},
+      {id:'p1600',start:'16:00',end:'18:00'},
+      {id:'p1800',start:'18:00',end:'20:00'}
     ]
   };
 }
 function ensureBoardData(){
   if(!D||typeof D!=='object')return;
   const def=boardDefaults();
-  if(!D.boardConfig||typeof D.boardConfig!=='object')D.boardConfig={...def,activities:def.activities.map(x=>({...x}))};
-  if(!Array.isArray(D.boardConfig.activities))D.boardConfig.activities=def.activities.map(x=>({...x}));
-  D.boardConfig.activities=D.boardConfig.activities.map((a,i)=>({
-    id:a.id||safeBoardId('act',a.label||a.code||('Actividad '+i)),
-    code:String(a.code||a.label||'?').trim().toUpperCase().slice(0,4),
-    label:a.label||a.code||'Actividad',
-    category:a.category==='person'?'person':'activity',
-    tone:a.tone||a.color||'forest'
-  }));
-  // Migración no destructiva desde la pizarra antigua: añade solo botones v16 que falten por código.
-  if(Number(D.boardConfig.schemaVersion||0)<2){
-    const used=new Set(D.boardConfig.activities.map(a=>a.code));
-    def.activities.forEach(a=>{if(!used.has(a.code)){D.boardConfig.activities.push({...a});used.add(a.code);}});
-    D.boardConfig.schemaVersion=2;
-  }
+  if(!D.boardConfig||typeof D.boardConfig!=='object')D.boardConfig=def;
+  ['activities','periodicColumns','walkers','paddocks','paddockSlots'].forEach(k=>{
+    if(!Array.isArray(D.boardConfig[k]))D.boardConfig[k]=def[k];
+  });
   if(!Array.isArray(D.weeklyPlans))D.weeklyPlans=[];
-  if(!Array.isArray(D.health))D.health=[];
-  if(!Array.isArray(D.expenses))D.expenses=[];
-  if(!Array.isArray(D.tasks))D.tasks=[];
-  if(!Array.isArray(D.horses))D.horses=[];
-  D.weeklyPlans=D.weeklyPlans.map(p=>({
-    ...p,
-    activities:Array.isArray(p.activities)?p.activities:[],
-    completed:Array.isArray(p.completed)?p.completed:[],
-    note:p.note||'',
-    vetDetails:p.vetDetails||'',
-    healthId:p.healthId||null
-  }));
+  if(!Array.isArray(D.periodicBoardDates))D.periodicBoardDates=[];
+  if(!Array.isArray(D.boardAssignments))D.boardAssignments=[];
 }
-function safeBoardId(prefix,label){return prefix+'_'+(label||'item').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,30)+'_'+Math.random().toString(36).slice(2,6);}
-function boardActivity(id){ensureBoardData();return D.boardConfig.activities.find(a=>a.id===id)||{id,code:'?',label:id,category:'activity',tone:'gray'};}
-function boardActivityByCode(code){ensureBoardData();return D.boardConfig.activities.find(a=>a.code===code)||null;}
-function boardToneClass(t){return 'ba-'+(t||'gray');}
-function boardStartOfWeek(dateStr){const d=new Date((dateStr||td())+'T12:00:00');const day=d.getDay()||7;d.setDate(d.getDate()-day+1);return d.toISOString().slice(0,10);}
+function boardActivity(id){ensureBoardData();return D.boardConfig.activities.find(a=>a.id===id)||{id,code:'?',label:id,tone:'gray'};}
+function boardStartOfWeek(dateStr){
+  const d=new Date((dateStr||td())+'T12:00:00');
+  const day=d.getDay()||7; d.setDate(d.getDate()-day+1);
+  return d.toISOString().slice(0,10);
+}
 function boardWeekDates(start){return Array.from({length:7},(_,i)=>addD(start,i));}
-function boardDateLabel(d){return new Date(d+'T12:00:00').toLocaleDateString('es-ES',{weekday:'short',day:'numeric'}).replace('.','');}
-function boardRangeLabel(start){const end=addD(start,6);const a=new Date(start+'T12:00:00'),b=new Date(end+'T12:00:00');const ma=a.toLocaleDateString('es-ES',{month:'short'}).replace('.','');const mb=b.toLocaleDateString('es-ES',{month:'short'}).replace('.','');return a.getMonth()===b.getMonth()?`${a.getDate()}–${b.getDate()} ${mb} ${b.getFullYear()}`:`${a.getDate()} ${ma} – ${b.getDate()} ${mb} ${b.getFullYear()}`;}
-function boardPlan(hid,date,create=false){ensureBoardData();let p=D.weeklyPlans.find(x=>x.hid===hid&&x.date===date)||null;if(!p&&create){p={id:uid(),hid,date,activities:[],completed:[],note:'',vetDetails:'',healthId:null};D.weeklyPlans.push(p);}return p;}
-function boardPlanActs(hid,date){const p=boardPlan(hid,date);return p?p.activities:[];}
-function boardPlanEmpty(p){return !p||(!p.activities.length&&!p.note&&!p.vetDetails);}
-function activeBoardHorses(){return (D.horses||[]).filter(h=>h.active!==false&&!['inactivo','vendido'].includes(String(h.status||'').toLowerCase()));}
-function boardSortActivities(ids){const order=new Map(D.boardConfig.activities.map((a,i)=>[a.id,i]));return [...new Set(ids)].sort((a,b)=>(order.get(a)??999)-(order.get(b)??999));}
-
-let _boardActiveTool=null;
-let _boardCopySource=null;
-let _boardDialog=null;
-let _boardHorseManager=false;
-let _boardHorseEditId=null;
-let _boardToolsOpen=false;
-let _quickType='health';
-let _saveState='saved';
-
-function boardSetSaveState(state){
-  _saveState=state;
-  const el=document.getElementById('board-save-state');
-  if(el){el.className='board-save-state '+state;el.innerHTML=`<span></span>${state==='saving'?'Guardando…':state==='offline'?'Sin conexión':'Guardado'}`;}
-}
-function boardSelectTool(id){_boardActiveTool=_boardActiveTool===id?null:id;if(id!=='copy')_boardCopySource=null;render();}
-function boardShiftWeek(n){V.boardWeek=addD(V.boardWeek||boardStartOfWeek(td()),n*7);_boardCopySource=null;render();}
-function boardGoToday(){V.boardWeek=boardStartOfWeek(td());_boardCopySource=null;render();}
-function boardOpenNote(hid,date){_boardDialog={type:'note',hid,date};render();}
-function boardOpenDone(hid,date){const p=boardPlan(hid,date);if(!p||!p.activities.length){toast('Esa casilla no tiene tareas');return;}_boardDialog={type:'done',hid,date};render();}
-function boardOpenVet(hid,date){_boardDialog={type:'vet',hid,date};render();}
-function boardCloseDialog(){_boardDialog=null;render();}
-function boardCellClick(hid,date){
+function boardPlan(hid,date){ensureBoardData();return D.weeklyPlans.find(p=>p.hid===hid&&p.date===date)||null;}
+function boardPlanActs(hid,date){const p=boardPlan(hid,date);return p&&Array.isArray(p.activities)?p.activities:[];}
+function boardHasActivity(hid,date,activityId){return boardPlanActs(hid,date).includes(activityId);}
+function boardPeriodicValue(hid,columnId){ensureBoardData();const x=D.periodicBoardDates.find(r=>r.hid===hid&&r.columnId===columnId);return x?x.date:'';}
+function setBoardPeriodic(hid,columnId,date){
   ensureBoardData();
-  const tool=_boardActiveTool;
-  if(!tool){_boardDialog={type:'cell',hid,date};render();return;}
-  if(tool==='note'){boardOpenNote(hid,date);return;}
-  if(tool==='done'){boardOpenDone(hid,date);return;}
-  if(tool==='copy'){boardCopyCell(hid,date);return;}
-  if(tool==='erase'){boardEraseCell(hid,date);return;}
-  const a=boardActivity(tool);const p=boardPlan(hid,date,true);
-  const has=p.activities.includes(tool);
-  if(a.code==='VET'&&has){boardOpenVet(hid,date);return;}
-  if(has){
-    p.activities=p.activities.filter(id=>id!==tool);
-    p.completed=p.completed.filter(id=>id!==tool);
-    if(a.code==='VET'){p.vetDetails='';}
-  }else p.activities=boardSortActivities([...p.activities,tool]);
-  if(boardPlanEmpty(p))D.weeklyPlans=D.weeklyPlans.filter(x=>x!==p);
+  const i=D.periodicBoardDates.findIndex(r=>r.hid===hid&&r.columnId===columnId);
+  if(date){const rec={hid,columnId,date};if(i>=0)D.periodicBoardDates[i]=rec;else D.periodicBoardDates.push(rec);}
+  else if(i>=0)D.periodicBoardDates.splice(i,1);
+  save();toast('Fecha actualizada');
+}
+function boardToneClass(t){return 'ba-'+(t||'gray');}
+function boardDateLabel(d){return new Date(d+'T12:00:00').toLocaleDateString('es-ES',{weekday:'short',day:'numeric'}).replace('.','');}
+function boardShiftWeek(n){V.boardWeek=addD(V.boardWeek||boardStartOfWeek(td()),n*7);render();}
+function boardChangeDate(n){V.boardDate=addD(V.boardDate||td(),n);render();}
+function openBoardCell(hid,date){V={name:'boardCell',hid,date,boardWeek:V.boardWeek||boardStartOfWeek(date)};render();}
+function saveBoardCell(){
+  ensureBoardData();const hid=V.hid,date=V.date;const acts=Array.from(document.querySelectorAll('.board-act-order')).map(x=>x.dataset.id);
+  const i=D.weeklyPlans.findIndex(p=>p.hid===hid&&p.date===date);
+  if(acts.length){const rec={hid,date,activities:acts};if(i>=0)D.weeklyPlans[i]=rec;else D.weeklyPlans.push(rec);}else if(i>=0)D.weeklyPlans.splice(i,1);
+  save();V={name:'boards',tab:'weekly',boardWeek:V.boardWeek||boardStartOfWeek(date)};render();toast('Pizarra actualizada');
+}
+function boardAddActivity(id){
+  const box=document.getElementById('board-cell-order');if(!box)return;
+  if(box.querySelector(`[data-id="${id}"]`)){toast('La actividad ya está añadida');return;}
+  const empty=box.querySelector('.board-empty');if(empty)empty.remove();
+  const a=boardActivity(id);box.insertAdjacentHTML('beforeend',boardOrderRow(a));
+}
+function boardOrderRow(a){return `<div class="board-act-order ${boardToneClass(a.tone)}" data-id="${a.id}"><span class="board-code">${esc(a.code)}</span><b>${esc(a.label)}</b><span class="board-order-actions"><button onclick="boardMoveActivity(this,-1)">↑</button><button onclick="boardMoveActivity(this,1)">↓</button><button class="danger" onclick="this.closest('.board-act-order').remove()">×</button></span></div>`;}
+function boardMoveActivity(btn,dir){const row=btn.closest('.board-act-order');if(!row)return;const target=dir<0?row.previousElementSibling:row.nextElementSibling;if(target)row.parentElement.insertBefore(dir<0?row:target,dir<0?target:row);}
+function rBoardCell(){
+  ensureBoardData();const h=D.horses.find(x=>x.id===V.hid);if(!h)return'<div class="view"><p>Caballo no encontrado.</p></div>';
+  const current=boardPlanActs(V.hid,V.date).map(boardActivity);
+  return `<div class="view"><div class="vh"><button class="ib" onclick="V={name:'boards',tab:'weekly',boardWeek:'${V.boardWeek||boardStartOfWeek(V.date)}'};render()">←</button><div><span class="ey">Pizarra semanal</span><h1>${esc(h.name)} · ${cap(boardDateLabel(V.date))}</h1></div></div>
+    <div class="board-help info"><b>Orden cronológico</b><span>Coloca las actividades en el mismo orden en que debe realizarlas el caballo.</span></div>
+    <div class="card"><label>Plan del día</label><div id="board-cell-order" class="board-order-list">${current.length?current.map(boardOrderRow).join(''):'<div class="empty-soft board-empty"><span>＋</span><div><b>Sin actividades</b><p>Añade las actividades previstas para este día.</p></div></div>'}</div></div>
+    <div class="card"><label>Añadir actividad</label><div class="board-activity-picker">${D.boardConfig.activities.map(a=>`<button class="board-pick ${boardToneClass(a.tone)}" onclick="boardAddActivity('${a.id}')"><span>${esc(a.code)}</span><small>${esc(a.label)}</small></button>`).join('')}</div></div>
+    <button class="btn bts btbl" onclick="saveBoardCell()">Guardar planificación</button>
+  </div>`;
+}
+function periodicStatus(date){if(!date)return{cls:'gray',txt:'Sin fecha'};const days=dU(date);if(days<0)return{cls:'red',txt:'Vencido'};if(days<=14)return{cls:'amber',txt:'Próximo'};return{cls:'green',txt:'Al día'};}
+function rBoards(){
+  ensureBoardData();const tab=V.tab||'weekly';const week=V.boardWeek||boardStartOfWeek(td());const date=V.boardDate||td();
+  const tabs=`<div class="tabs board-tabs"><button class="tab ${tab==='weekly'?'active':''}" onclick="V={name:'boards',tab:'weekly',boardWeek:'${week}'};render()">Principal</button><button class="tab ${tab==='walker'?'active':''}" onclick="V={name:'boards',tab:'walker',boardDate:'${date}'};render()">Caminador</button><button class="tab ${tab==='paddock'?'active':''}" onclick="V={name:'boards',tab:'paddock',boardDate:'${date}'};render()">Paddocks</button><button class="tab ${tab==='config'?'active':''}" onclick="V={name:'boards',tab:'config'};render()">Configurar</button></div>`;
+  let body='';
+  if(tab==='weekly')body=rWeeklyBoard(week);
+  if(tab==='walker')body=rResourceBoard('walker',date);
+  if(tab==='paddock')body=rResourceBoard('paddock',date);
+  if(tab==='config')body=rBoardConfig();
+  return `<div class="view board-view"><div class="vh"><button class="ib" onclick="V={name:'home'};render()">←</button><div><span class="ey">Organización diaria</span><h1>Pizarras</h1></div></div>${tabs}${body}</div>`;
+}
+function rWeeklyBoard(week){
+  const dates=boardWeekDates(week);const periodic=D.boardConfig.periodicColumns;
+  const end=dates[6];
+  let html=`<div class="board-toolbar"><button class="ib" onclick="boardShiftWeek(-1)">←</button><div><b>${fD(week)} — ${fD(end)}</b><small>${_boardQuickActivity?'Modo rápido activo: toca casillas para añadir o quitar.':'Selecciona una actividad rápida o pulsa una casilla para ordenar.'}</small></div><button class="ib" onclick="boardShiftWeek(1)">→</button></div>`;
+  if(!D.horses.length)return html+'<div class="em"><div class="big">🐴</div><p>Añade caballos para utilizar la pizarra.</p></div>';
+  html+=`<div class="quick-board-panel"><div class="quick-board-title"><div><b>Asignación rápida</b><small>Pulsa una actividad y después toca todas las casillas necesarias. El orden se ajusta entrando en cada caballo.</small></div>${_boardQuickActivity?`<button class="btn btg btsm" onclick="setBoardQuickActivity(null)">Terminar</button>`:''}</div><div class="quick-board-actions">${D.boardConfig.activities.map(a=>`<button class="quick-board-btn ${boardToneClass(a.tone)} ${_boardQuickActivity===a.id?'active':''}" onclick="setBoardQuickActivity('${a.id}')"><span>${esc(a.code)}</span><small>${esc(a.label)}</small></button>`).join('')}</div></div>`;
+  html+=`<div class="board-fit"><table class="weekly-board compact-board"><colgroup><col class="col-horse">${dates.map(()=>'<col class="col-day">').join('')}${periodic.map(()=>'<col class="col-periodic">').join('')}</colgroup><thead><tr><th class="horse-col">Caballo</th>${dates.map(d=>`<th class="${d===td()?'is-today':''}"><span>${cap(boardDateLabel(d)).replace(' ','<br>')}</span></th>`).join('')}${periodic.map(c=>`<th class="periodic-head" title="${esc(c.label)}"><span>${esc(c.label)}</span></th>`).join('')}</tr></thead><tbody>`;
+  D.horses.forEach(h=>{
+    html+=`<tr><th class="horse-col"><div class="board-horse-name">${h.photo?`<img src="${h.photo}" alt="">`:'<span>🐴</span>'}<b>${esc(h.name)}</b></div></th>`;
+    dates.forEach(d=>{const acts=boardPlanActs(h.id,d);html+=`<td class="plan-cell ${d===td()?'is-today':''} ${_boardQuickActivity?'quick-mode':''}" onclick="boardQuickCell('${h.id}','${d}')">${acts.length?`<div class="plan-sequence">${acts.map((id,i)=>{const a=boardActivity(id);return `<span class="plan-code ${boardToneClass(a.tone)} ${_boardQuickActivity===id?'quick-hit':''}" title="${esc(a.label)}">${esc(a.code)}</span>${i<acts.length-1?'<i>›</i>':''}`;}).join('')}</div>`:'<span class="plan-empty">＋</span>'}</td>`;});
+    periodic.forEach(c=>{const val=boardPeriodicValue(h.id,c.id),st=periodicStatus(val);html+=`<td class="periodic-cell" onclick="editBoardPeriodic('${h.id}','${c.id}','${val}')"><button type="button" class="periodic-compact ${boardToneClass(st.cls)}" title="${esc(c.label)}: ${val||'sin fecha'}"><b>${val?val.slice(8,10)+'/'+val.slice(5,7):'—'}</b><small>${st.txt}</small></button></td>`;});
+    html+='</tr>';
+  });
+  return html+'</tbody></table></div><div class="board-legend"><span class="ok">Verde: al día</span><span class="warn">Amarillo: próximo o pendiente</span><span class="bad">Rojo: vencido o conflicto</span><span class="info">Azul: información</span></div>';
+}
+
+function boardActivityCandidates(type,date){const actId=type==='walker'?'caminador':'paddock';return D.horses.filter(h=>boardHasActivity(h.id,date,actId));}
+function boardAssignment(type,date,resourceId,slotId,position){ensureBoardData();return D.boardAssignments.find(a=>a.type===type&&a.date===date&&a.resourceId===resourceId&&a.slotId===slotId&&Number(a.position)===Number(position));}
+function boardAssignedHorseIds(type,date){return new Set(D.boardAssignments.filter(a=>a.type===type&&a.date===date).map(a=>a.hid));}
+let _boardPickedHorse=null;
+let _boardQuickActivity=null;
+function setBoardQuickActivity(id){
+  _boardQuickActivity=_boardQuickActivity===id?null:id;
+  render();
+  if(_boardQuickActivity){
+    const a=boardActivity(_boardQuickActivity);
+    toast('Modo rápido '+a.code+': toca las casillas que quieras');
+  }else toast('Modo rápido desactivado');
+}
+function boardQuickCell(hid,date){
+  if(!_boardQuickActivity){openBoardCell(hid,date);return;}
+  ensureBoardData();
+  let p=boardPlan(hid,date);
+  if(!p){p={id:uid(),hid,date,activities:[]};D.weeklyPlans.push(p);}
+  if(!Array.isArray(p.activities))p.activities=[];
+  const i=p.activities.indexOf(_boardQuickActivity);
+  if(i>=0)p.activities.splice(i,1);else p.activities.push(_boardQuickActivity);
   save();render();
 }
-function boardEraseCell(hid,date){
-  const p=boardPlan(hid,date);if(!p)return;
-  if((p.note||p.vetDetails||p.healthId)&&!confirm('Esta casilla contiene información adicional. ¿Borrarla también?'))return;
-  if(p.healthId){
-    D.health=D.health.filter(r=>r.id!==p.healthId);
-    D.expenses=D.expenses.filter(e=>e.healthId!==p.healthId);
-  }
-  D.weeklyPlans=D.weeklyPlans.filter(x=>x!==p);save();render();
-}
-function boardCopyCell(hid,date){
-  const p=boardPlan(hid,date);
-  if(!_boardCopySource){
-    if(boardPlanEmpty(p)){toast('Esa casilla está vacía');return;}
-    _boardCopySource={hid,date,activities:[...(p?.activities||[])],note:p?.note||''};render();return;
-  }
-  if(_boardCopySource.hid===hid&&_boardCopySource.date===date){_boardCopySource=null;render();return;}
-  boardPasteTargets([{hid,date}]);
-}
-function boardPasteTargets(targets){
-  if(!_boardCopySource)return;
-  const unique=[];const seen=new Set();targets.forEach(t=>{const k=t.hid+'|'+t.date;if(!seen.has(k)){seen.add(k);unique.push(t);}});
-  unique.forEach(t=>{const p=boardPlan(t.hid,t.date,true);p.activities=boardSortActivities([..._boardCopySource.activities]);p.completed=[];p.note=_boardCopySource.note||'';p.vetDetails='';p.healthId=null;});
-  save();render();toast(unique.length===1?'Casilla copiada':unique.length+' casillas copiadas');
-}
-function boardCopyToHorse(hid){if(!_boardCopySource)return;boardPasteTargets(boardWeekDates(V.boardWeek||boardStartOfWeek(td())).map(date=>({hid,date})));}
-function boardCopyToDay(date){if(!_boardCopySource)return;boardPasteTargets(activeBoardHorses().map(h=>({hid:h.id,date})));}
-function boardToggleCompleted(hid,date,activityId){const p=boardPlan(hid,date,true);p.completed=p.completed.includes(activityId)?p.completed.filter(x=>x!==activityId):[...p.completed,activityId];save();render();}
-function boardSaveNote(){if(!_boardDialog)return;const p=boardPlan(_boardDialog.hid,_boardDialog.date,true);p.note=gv('board-note').trim().slice(0,240);if(boardPlanEmpty(p))D.weeklyPlans=D.weeklyPlans.filter(x=>x!==p);_boardDialog=null;save();render();}
-function boardSaveVet(){
-  if(!_boardDialog)return;
-  const hid=_boardDialog.hid,date=_boardDialog.date;const detail=gv('board-vet-detail').trim();if(!detail){toast('Describe la actuación veterinaria');return;}
-  const provider=gv('board-vet-provider').trim();const amount=Number(gv('board-vet-amount'))||0;const payer=gv('board-vet-payer').trim();const next=gv('board-vet-next')||null;if(amount>0&&!payer){toast('Indica quién ha pagado el gasto');return;}
-  const vet=boardActivityByCode('VET');if(!vet){toast('Falta el botón VET en la configuración');return;}
-  const p=boardPlan(hid,date,true);if(!p.activities.includes(vet.id))p.activities=boardSortActivities([...p.activities,vet.id]);p.vetDetails=detail;
-  let healthId=p.healthId;let rec=healthId?D.health.find(r=>r.id===healthId):null;
-  if(!rec){healthId=uid();p.healthId=healthId;rec={id:healthId,hid,type:'otro',source:'board-vet'};D.health.push(rec);}
-  Object.assign(rec,{hid,type:'otro',label:'Veterinario',date,nxt:next,notes:detail,provider,payee:provider,amount,payStatus:amount?'pendiente':'pendiente',source:'board-vet'});
-  let exp=D.expenses.find(e=>e.healthId===healthId);
-  if(amount>0){
-    const data={hid,concept:'Veterinario',amount,date,cat:'vet',payer:payer||'Cuadra',payee:provider,status:'pendiente',notes:detail,healthId};
-    if(exp)Object.assign(exp,data);else D.expenses.push({id:uid(),...data});
-  }else if(exp)D.expenses=D.expenses.filter(e=>e.id!==exp.id);
-  _boardDialog=null;save();render();toast('VET guardado en Salud');
-}
-function boardRepeatPreviousWeek(){
-  const week=V.boardWeek||boardStartOfWeek(td());const prev=addD(week,-7);const prevDates=boardWeekDates(prev),dates=boardWeekDates(week);let copied=0,conflicts=0;
-  activeBoardHorses().forEach(h=>dates.forEach((date,i)=>{const src=boardPlan(h.id,prevDates[i]);if(boardPlanEmpty(src))return;const dst=boardPlan(h.id,date);if(dst&&!boardPlanEmpty(dst)){conflicts++;return;}const p=boardPlan(h.id,date,true);p.activities=[...src.activities];p.completed=[];p.note=src.note||'';p.vetDetails='';p.healthId=null;copied++;}));
-  if(!copied){toast(conflicts?'La semana actual ya contiene planificación':'La semana anterior no tiene planificación');return;}
-  save();render();toast(`${copied} casillas copiadas${conflicts?' · '+conflicts+' conservadas':''}`);
+function editBoardPeriodic(hid,columnId,current){
+  const val=prompt('Introduce la próxima fecha (AAAA-MM-DD). Déjalo vacío para borrar.',current||'');
+  if(val===null)return;
+  const clean=val.trim();
+  if(clean&&!/^\d{4}-\d{2}-\d{2}$/.test(clean)){toast('Fecha no válida. Usa AAAA-MM-DD');return;}
+  setBoardPeriodic(hid,columnId,clean);
 }
 
-function rBoardDialog(){
-  if(!_boardDialog)return'';const h=D.horses.find(x=>x.id===_boardDialog.hid);const p=boardPlan(_boardDialog.hid,_boardDialog.date,true);if(!h)return'';const day=cap(boardDateLabel(_boardDialog.date));
-  if(_boardDialog.type==='note')return `<div class="board-modal-backdrop" onclick="if(event.target===this)boardCloseDialog()"><section class="board-modal"><div class="board-modal-head"><div><small>Nota puntual</small><h2>${esc(h.name)} · ${esc(day)}</h2></div><button onclick="boardCloseDialog()">×</button></div><textarea id="board-note" maxlength="240" placeholder="Ej.: No montar, pequeña herida…">${esc(p.note||'')}</textarea><div class="board-modal-actions"><button class="btn btg" onclick="document.getElementById('board-note').value=''">Vaciar</button><button class="btn bts" onclick="boardSaveNote()">Guardar nota</button></div></section></div>`;
-  if(_boardDialog.type==='done')return `<div class="board-modal-backdrop" onclick="if(event.target===this)boardCloseDialog()"><section class="board-modal"><div class="board-modal-head"><div><small>Trabajo realizado</small><h2>${esc(h.name)} · ${esc(day)}</h2></div><button onclick="boardCloseDialog()">×</button></div><p class="board-modal-help">Marca individualmente lo que ya está hecho.</p><div class="board-done-list">${p.activities.map(id=>{const a=boardActivity(id),done=p.completed.includes(id);return`<button class="${done?'done':''}" onclick="boardToggleCompleted('${h.id}','${_boardDialog.date}','${id}')"><strong>${done?'✓':esc(a.code)}</strong><span>${esc(a.label)}</span><em>${done?'Hecho':'Pendiente'}</em></button>`;}).join('')}</div></section></div>`;
-  if(_boardDialog.type==='vet'){
-    const rec=p.healthId?D.health.find(r=>r.id===p.healthId):null;const exp=p.healthId?D.expenses.find(e=>e.healthId===p.healthId):null;
-    return `<div class="board-modal-backdrop" onclick="if(event.target===this)boardCloseDialog()"><section class="board-modal vet-modal"><div class="board-modal-head"><div><small>Veterinario</small><h2>${esc(h.name)} · ${esc(day)}</h2></div><button onclick="boardCloseDialog()">×</button></div><label>¿Qué ha ocurrido o qué se ha hecho?<textarea id="board-vet-detail" maxlength="700" placeholder="Ej.: Inflamación ojo izquierdo. Veterinario revisa…">${esc(p.vetDetails||rec?.notes||'')}</textarea></label><div class="board-form-grid"><label>Veterinario / proveedor<input id="board-vet-provider" value="${esc(rec?.provider||rec?.payee||'')}" placeholder="Opcional"></label><label>Gasto asociado (€)<input id="board-vet-amount" type="number" min="0" step="0.01" value="${exp?.amount||rec?.amount||''}" placeholder="0,00"></label><label>Pagado por<input id="board-vet-payer" value="${esc(exp?.payer||'')}" placeholder="Opcional"></label><label>Revisión / recordatorio<input id="board-vet-next" type="date" value="${esc(rec?.nxt||'')}"></label></div><div class="board-modal-actions"><button class="btn bts" onclick="boardSaveVet()">Guardar VET</button></div></section></div>`;
-  }
-  if(_boardDialog.type==='cell')return `<div class="board-modal-backdrop" onclick="if(event.target===this)boardCloseDialog()"><section class="board-modal"><div class="board-modal-head"><div><small>Casilla</small><h2>${esc(h.name)} · ${esc(day)}</h2></div><button onclick="boardCloseDialog()">×</button></div><p class="board-modal-help">Selecciona primero un botón de la barra para añadir, anotar, marcar hecho, copiar o borrar.</p></section></div>`;
-  return'';
+function setBoardPickedHorse(hid){_boardPickedHorse=hid;document.querySelectorAll('.pending-horse').forEach(x=>x.classList.toggle('selected',x.dataset.hid===hid));toast('Caballo seleccionado. Pulsa un hueco libre.');}
+function boardDragHorse(ev,hid){_boardPickedHorse=hid;try{ev.dataTransfer.setData('text/plain',JSON.stringify({hid}));}catch(e){}}
+function boardDragAssignment(ev,id){try{ev.dataTransfer.setData('text/plain',JSON.stringify({assignmentId:id}));}catch(e){}}
+function boardDrop(ev,type,date,resourceId,slotId,position){ev.preventDefault();let data={};try{data=JSON.parse(ev.dataTransfer.getData('text/plain')||'{}');}catch(e){};if(data.assignmentId){moveBoardAssignment(data.assignmentId,type,date,resourceId,slotId,position);return;}assignBoardHorse(data.hid||_boardPickedHorse,type,date,resourceId,slotId,position);}
+function boardClickCell(type,date,resourceId,slotId,position){const existing=boardAssignment(type,date,resourceId,slotId,position);if(existing){if(confirm('¿Quitar este caballo del hueco?'))removeBoardAssignment(existing.id);return;}if(_boardPickedHorse)assignBoardHorse(_boardPickedHorse,type,date,resourceId,slotId,position);else toast('Selecciona primero un caballo pendiente');}
+function horseConflict(hid,date,type,slotId){
+  const cfg=D.boardConfig;let start='',end='';
+  if(type==='walker'){for(const w of cfg.walkers){const s=w.slots.find(x=>x.id===slotId);if(s){start=s.start;end=s.end;break;}}}
+  else{const s=cfg.paddockSlots.find(x=>x.id===slotId);if(s){start=s.start;end=s.end;}}
+  return D.boardAssignments.find(a=>a.hid===hid&&a.date===date&&a.slotId!==slotId&&(()=>{let s2=null;if(a.type==='walker'){for(const w of cfg.walkers){s2=w.slots.find(x=>x.id===a.slotId);if(s2)break;}}else s2=cfg.paddockSlots.find(x=>x.id===a.slotId);return s2&&start<s2.end&&end>s2.start;})());
 }
-
-function rBoardHorseManager(){
-  if(!_boardHorseManager)return'';const editing=_boardHorseEditId?D.horses.find(h=>h.id===_boardHorseEditId):null;
-  if(editing||_boardHorseEditId==='new'){
-    const h=editing||{};return `<div class="board-modal-backdrop" onclick="if(event.target===this)closeBoardHorseManager()"><section class="board-modal horse-modal"><div class="board-modal-head"><div><small>Caballo</small><h2>${editing?'Editar caballo':'Añadir caballo'}</h2></div><button onclick="closeBoardHorseManager()">×</button></div><label>Nombre *<input id="bm-name" value="${esc(h.name||'')}" placeholder="Nombre del caballo"></label><div class="board-form-grid"><label>Estado<select id="bm-status"><option ${(!h.status||h.status==='Activo')?'selected':''}>Activo</option><option ${h.status==='Inactivo'?'selected':''}>Inactivo</option><option ${h.status==='Campo'?'selected':''}>Campo</option><option ${h.status==='Vendido'?'selected':''}>Vendido</option></select></label><label>Ubicación<input id="bm-location" value="${esc(h.location||'')}" placeholder="Cuadra, campo…"></label></div><label class="board-check"><input id="bm-active" type="checkbox" ${h.active===false?'':'checked'}><span>Mostrar en la pizarra</span></label><label>Notas<textarea id="bm-notes" maxlength="500">${esc(h.notes||'')}</textarea></label><div class="board-modal-actions"><button class="btn btg" onclick="${editing?`V={name:'horse',hid:'${editing.id}',tab:'salud'};_boardHorseManager=false;_boardHorseEditId=null;render()`:`_boardHorseEditId=null;render()`}">${editing?'Abrir ficha completa':'Cancelar'}</button><button class="btn bts" onclick="saveBoardHorse('${editing?editing.id:''}')">${editing?'Guardar cambios':'Añadir caballo'}</button></div></section></div>`;
-  }
-  return `<div class="board-modal-backdrop" onclick="if(event.target===this)closeBoardHorseManager()"><section class="board-modal horse-list-modal"><div class="board-modal-head"><div><small>Gestión rápida</small><h2>Caballos</h2></div><button onclick="closeBoardHorseManager()">×</button></div><button class="btn bts btbl" onclick="_boardHorseEditId='new';render()">＋ Añadir caballo</button><div class="board-horse-list">${(D.horses||[]).map((h,i)=>`<div class="board-horse-row ${h.active===false?'inactive':''}"><button class="board-horse-open" onclick="_boardHorseEditId='${h.id}';render()"><span>${h.photo?`<img src="${h.photo}" alt="">`:'🐴'}</span><div><b>${esc(h.name)}</b><small>${esc(h.status||'Activo')}${h.location?' · '+esc(h.location):''}</small></div></button><div class="board-horse-order"><button ${i===0?'disabled':''} onclick="boardMoveHorse('${h.id}',-1)">↑</button><button ${i===D.horses.length-1?'disabled':''} onclick="boardMoveHorse('${h.id}',1)">↓</button></div></div>`).join('')||'<p class="board-modal-help">Todavía no hay caballos.</p>'}</div></section></div>`;
+function assignBoardHorse(hid,type,date,resourceId,slotId,position){
+  ensureBoardData();if(!hid){toast('Selecciona un caballo');return;}
+  const occupied=boardAssignment(type,date,resourceId,slotId,position);if(occupied){toast('Ese hueco ya está ocupado');return;}
+  const conflict=horseConflict(hid,date,type,slotId);if(conflict&&!confirm('Este caballo ya tiene otra ubicación en una franja que coincide. ¿Asignarlo de todos modos?'))return;
+  D.boardAssignments.push({id:uid(),type,date,resourceId,slotId,position:Number(position),hid});_boardPickedHorse=null;save();render();toast('Caballo colocado');
 }
-function openBoardHorseManager(id=null){_boardHorseManager=true;_boardHorseEditId=id;render();}
-function closeBoardHorseManager(){_boardHorseManager=false;_boardHorseEditId=null;render();}
-function saveBoardHorse(id){
-  const name=gv('bm-name').trim();if(!name){toast('Nombre obligatorio');return;}const active=document.getElementById('bm-active')?.checked!==false;const status=gv('bm-status')||'Activo';const location=gv('bm-location').trim();const notes=gv('bm-notes').trim();
-  if(id){const h=D.horses.find(x=>x.id===id);if(!h)return;Object.assign(h,{name,active,status,location,notes});}
-  else D.horses.push({id:uid(),name,active,status,location,notes,owner:'',owners:[],breed:'',photo:null});
-  _boardHorseEditId=null;save();render();toast(id?'Caballo actualizado':'Caballo añadido');
-}
-function boardMoveHorse(id,dir){const i=D.horses.findIndex(h=>h.id===id),j=i+dir;if(i<0||j<0||j>=D.horses.length)return;[D.horses[i],D.horses[j]]=[D.horses[j],D.horses[i]];save();render();}
-
-function rBoardToolsEditor(){
-  if(!_boardToolsOpen)return'';
-  return `<div class="board-modal-backdrop" onclick="if(event.target===this)closeBoardTools()"><section class="board-modal tools-modal"><div class="board-modal-head"><div><small>Personalizar pizarra</small><h2>Editar botones</h2></div><button onclick="closeBoardTools()">×</button></div><p class="board-modal-help">Código único, nombre, grupo y color. El orden de esta lista será el orden de las casillas.</p><div class="board-tool-list">${D.boardConfig.activities.map((a,i)=>`<div class="board-tool-row"><span class="plan-code ${boardToneClass(a.tone)}">${esc(a.code)}</span><div><b>${esc(a.label)}</b><small>${a.category==='person'?'Persona':'Actividad'} · ${esc(a.tone)}</small></div><div class="board-tool-actions"><button ${i===0?'disabled':''} onclick="boardMoveTool('${a.id}',-1)">↑</button><button ${i===D.boardConfig.activities.length-1?'disabled':''} onclick="boardMoveTool('${a.id}',1)">↓</button><button onclick="boardEditTool('${a.id}')">✎</button><button class="danger" onclick="boardDeleteTool('${a.id}')">×</button></div></div>`).join('')}</div><button class="btn bts btbl" onclick="boardAddTool()">＋ Añadir botón</button></section></div>`;
-}
-function openBoardTools(){_boardToolsOpen=true;render();}
-function closeBoardTools(){_boardToolsOpen=false;render();}
-function boardAddTool(){const code=(prompt('Código corto (1-4 caracteres)')||'').trim().toUpperCase();if(!code)return;if(D.boardConfig.activities.some(a=>a.code===code)){toast('Ese código ya existe');return;}const label=(prompt('Nombre del botón')||'').trim();if(!label)return;const category=(prompt('Grupo: persona o actividad','actividad')||'actividad').toLowerCase().startsWith('p')?'person':'activity';const tone=(prompt('Color: forest, mint, sky, lilac, sand, sage, rose, ochre, vet, competition','forest')||'forest').trim().toLowerCase();D.boardConfig.activities.push({id:safeBoardId('act',label),code:code.slice(0,4),label,category,tone});save();render();}
-function boardEditTool(id){const a=boardActivity(id);const code=(prompt('Código',a.code)||'').trim().toUpperCase();if(!code)return;if(D.boardConfig.activities.some(x=>x.id!==id&&x.code===code)){toast('Ese código ya existe');return;}const label=(prompt('Nombre',a.label)||'').trim();if(!label)return;const category=(prompt('Grupo: persona o actividad',a.category==='person'?'persona':'actividad')||'actividad').toLowerCase().startsWith('p')?'person':'activity';const tone=(prompt('Color',a.tone||'forest')||a.tone||'forest').trim().toLowerCase();Object.assign(a,{code:code.slice(0,4),label,category,tone});save();render();}
-function boardDeleteTool(id){const a=boardActivity(id);if(!confirm(`¿Eliminar ${a.code} de la pizarra?`))return;D.boardConfig.activities=D.boardConfig.activities.filter(x=>x.id!==id);D.weeklyPlans.forEach(p=>{p.activities=p.activities.filter(x=>x!==id);p.completed=p.completed.filter(x=>x!==id);});if(_boardActiveTool===id)_boardActiveTool=null;save();render();}
-function boardMoveTool(id,dir){const a=D.boardConfig.activities,i=a.findIndex(x=>x.id===id),j=i+dir;if(i<0||j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]];save();render();}
-
-function rQuickCapture(){
-  const horses=activeBoardHorses();const kind=_quickType||'health';
-  return `<div class="view quick-capture-view"><div class="simple-page-head"><button class="ib" onclick="V={name:'boards',boardWeek:boardStartOfWeek(td())};render()">←</button><div><span class="ey">EquiLog</span><h1>Registro rápido</h1></div></div><div class="quick-kind-tabs"><button class="${kind==='health'?'active':''}" onclick="_quickType='health';render()">🩺 Salud</button><button class="${kind==='expense'?'active':''}" onclick="_quickType='expense';render()">💸 Gasto</button><button class="${kind==='reminder'?'active':''}" onclick="_quickType='reminder';render()">🔔 Recordatorio</button></div><section class="quick-card"><div class="quick-step"><small>1</small><b>Caballos</b><span>Selecciona uno o varios</span></div><div class="quick-horse-chips">${horses.map(h=>`<label><input type="checkbox" class="quick-horse" value="${h.id}"><span>${esc(h.name)}</span></label>`).join('')||'<p>No hay caballos activos.</p>'}</div></section><section class="quick-card"><div class="quick-step"><small>2</small><b>${kind==='health'?'Actuación sanitaria':kind==='expense'?'Datos del gasto':'Qué hay que recordar'}</b></div><label>${kind==='health'?'¿Qué ha pasado o qué se ha hecho?':kind==='expense'?'Concepto':'¿Qué hay que hacer?'}<input id="q-title" placeholder="${kind==='health'?'Ej.: Desparasitación':kind==='expense'?'Ej.: Porte a concurso':'Ej.: Vacunar'}"></label><div class="board-form-grid"><label>Fecha<input id="q-date" type="date" value="${td()}"></label>${kind!=='reminder'?`<label>Proveedor / profesional<input id="q-provider" placeholder="Opcional"></label>`:''}</div><label>Notas<textarea id="q-details" placeholder="Detalles opcionales…"></textarea></label>${kind==='health'?`<label class="board-check"><input id="q-followup" type="checkbox" onchange="document.getElementById('q-followup-box').style.display=this.checked?'grid':'none'"><span>Crear revisión / recordatorio</span></label><div id="q-followup-box" class="board-form-grid" style="display:none"><label>Dentro de<input id="q-delay" type="number" min="1" step="1" placeholder="6"></label><label>Unidad<select id="q-delay-unit"><option value="days">Días</option><option value="weeks">Semanas</option><option value="months" selected>Meses</option></select></label></div><label class="board-check"><input id="q-with-expense" type="checkbox" onchange="document.getElementById('q-expense-box').style.display=this.checked?'grid':'none'"><span>Esta actuación tiene gasto asociado</span></label><div id="q-expense-box" class="quick-expense-box" style="display:none">${quickExpenseFields()}</div>`:kind==='expense'?quickExpenseFields():`<div class="board-form-grid"><label>O dentro de<input id="q-delay" type="number" min="1" step="1" placeholder="Ej.: 3"></label><label>Unidad<select id="q-delay-unit"><option value="days">Días</option><option value="weeks">Semanas</option><option value="months">Meses</option></select></label></div>`}</section><button class="btn bts btbl quick-save" onclick="saveQuickCapture()">Guardar registro</button></div>`;
-}
-function quickExpenseFields(){return `<div class="board-form-grid"><label>Importe (€)<input id="q-amount" type="number" min="0" step="0.01"></label><label>Categoría<select id="q-category"><option value="vet">Veterinario</option><option value="herrador">Herrador</option><option value="transporte">Transporte</option><option value="concurso">Concursos</option><option value="material">Material</option><option value="servicio">Otro</option></select></label></div><div class="board-form-grid"><label>Proveedor<input id="q-exp-provider" placeholder="Veterinario, tienda…"></label><label>Pagado por<input id="q-payer" placeholder="Nombre"></label></div>`;}
-function quickFutureDate(base,amount,unit){const d=new Date((base||td())+'T12:00:00'),n=Number(amount)||0;if(unit==='days')d.setDate(d.getDate()+n);else if(unit==='weeks')d.setDate(d.getDate()+7*n);else d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,10);}
-function saveQuickCapture(){
-  const ids=Array.from(document.querySelectorAll('.quick-horse:checked')).map(x=>x.value);if(!ids.length){toast('Selecciona al menos un caballo');return;}const title=gv('q-title').trim();if(!title){toast('Escribe el concepto');return;}const date=gv('q-date')||td(),details=gv('q-details').trim(),provider=gv('q-provider').trim(),kind=_quickType||'health';let created=0;
-  if(kind==='health'){
-    const withExpense=!!document.getElementById('q-with-expense')?.checked;const follow=!!document.getElementById('q-followup')?.checked;const next=follow?quickFutureDate(date,gv('q-delay'),gv('q-delay-unit')):null;
-    ids.forEach(hid=>{const healthId=uid();D.health.push({id:healthId,hid,type:'otro',label:title,date,nxt:next,notes:details,provider,payee:provider,amount:withExpense?(Number(gv('q-amount'))||0):0,payStatus:'pendiente',source:'quick'});if(withExpense&&Number(gv('q-amount'))>0)D.expenses.push({id:uid(),hid,concept:title,amount:Number(gv('q-amount'))||0,date,cat:gv('q-category')||'vet',payer:gv('q-payer').trim()||'Cuadra',payee:gv('q-exp-provider').trim()||provider,status:'pendiente',notes:details,healthId});created++;});
-  }else if(kind==='expense'){
-    const amount=Number(gv('q-amount'))||0;if(amount<=0){toast('Indica el importe');return;}const payer=gv('q-payer').trim();if(!payer){toast('Indica quién ha pagado');return;}ids.forEach(hid=>{D.expenses.push({id:uid(),hid,concept:title,amount,date,cat:gv('q-category')||'servicio',payer,payee:gv('q-exp-provider').trim(),status:'pendiente',notes:details,source:'quick'});created++;});
+function moveBoardAssignment(id,type,date,resourceId,slotId,position){const a=D.boardAssignments.find(x=>x.id===id);if(!a)return;const occupied=boardAssignment(type,date,resourceId,slotId,position);if(occupied&&occupied.id!==id){toast('Ese hueco ya está ocupado');return;}a.type=type;a.date=date;a.resourceId=resourceId;a.slotId=slotId;a.position=Number(position);save();render();toast('Asignación movida');}
+function removeBoardAssignment(id){D.boardAssignments=D.boardAssignments.filter(a=>a.id!==id);save();render();toast('Asignación retirada');}
+function rResourceBoard(type,date){
+  const candidates=boardActivityCandidates(type,date),assigned=boardAssignedHorseIds(type,date),pending=candidates.filter(h=>!assigned.has(h.id));
+  const label=type==='walker'?'caminador':'paddock';
+  let html=`<div class="board-toolbar"><button class="ib" onclick="boardChangeDate(-1)">←</button><div><b>${cap(fDL(date))}</b><small>${candidates.length} caballo${candidates.length!==1?'s':''} con ${label} · ${pending.length} pendiente${pending.length!==1?'s':''}</small></div><button class="ib" onclick="boardChangeDate(1)">→</button></div>`;
+  html+=`<div class="pending-tray ${pending.length?'has-pending':'all-done'}"><div><b>${pending.length?'Pendientes de colocar':'Pizarra completa'}</b><small>${pending.length?'Arrastra un caballo o púlsalo y después toca un hueco libre.':'Todos los caballos previstos están colocados.'}</small></div><div class="pending-list">${pending.map(h=>`<button class="pending-horse" data-hid="${h.id}" draggable="true" ondragstart="boardDragHorse(event,'${h.id}')" onclick="setBoardPickedHorse('${h.id}')"><span>${h.photo?`<img src="${h.photo}" alt="">`:'🐴'}</span>${esc(h.name)}</button>`).join('')||'<span class="complete-pill">✓ Todo organizado</span>'}</div></div>`;
+  if(type==='walker'){
+    if(!D.boardConfig.walkers.length)return html+'<div class="em"><p>No hay caminadores configurados.</p></div>';
+    D.boardConfig.walkers.forEach(w=>{
+      html+=`<section class="resource-card"><div class="resource-title"><div><span class="resource-icon teal">C</span><div><h2>${esc(w.name)}</h2><small>${w.capacity} huecos</small></div></div></div><div class="resource-scroll"><table class="resource-board"><thead><tr><th>Horario</th>${Array.from({length:w.capacity},(_,i)=>`<th>Hueco ${i+1}</th>`).join('')}</tr></thead><tbody>`;
+      w.slots.forEach(s=>{html+=`<tr><th>${s.start}<small>${s.end}</small></th>${Array.from({length:w.capacity},(_,i)=>resourceCell(type,date,w.id,s.id,i)).join('')}</tr>`;});
+      html+='</tbody></table></div></section>';
+    });
   }else{
-    const delay=Number(gv('q-delay'))||0;const finalDate=delay>0?quickFutureDate(date,delay,gv('q-delay-unit')):date;ids.forEach(hid=>{D.tasks.push({id:uid(),createdBy:(window._FBUSER&&window._FBUSER.uid)||null,hid,activity:'otro',date:finalDate,time:null,dur:30,pid:null,notes:[title,details].filter(Boolean).join(' · '),status:'pending',source:'quick-reminder'});created++;});
+    if(!D.boardConfig.paddocks.length)return html+'<div class="em"><p>No hay paddocks configurados.</p></div>';
+    html+=`<section class="resource-card"><div class="resource-title"><div><span class="resource-icon amber">P</span><div><h2>Paddocks</h2><small>${D.boardConfig.paddocks.length} espacios configurados</small></div></div></div><div class="resource-scroll"><table class="resource-board paddock-board"><thead><tr><th>Horario</th>${D.boardConfig.paddocks.map(p=>`<th>${esc(p.name)}</th>`).join('')}</tr></thead><tbody>`;
+    D.boardConfig.paddockSlots.forEach(s=>{html+=`<tr><th>${s.start}<small>${s.end}</small></th>${D.boardConfig.paddocks.map(p=>resourceCell(type,date,p.id,s.id,0)).join('')}</tr>`;});html+='</tbody></table></div></section>';
   }
-  save();toast(`${created} registro${created===1?'':'s'} guardado${created===1?'':'s'}`);V={name:'boards',boardWeek:boardStartOfWeek(date)};render();
+  return html+'<div class="board-legend"><span class="ok">Verde: organizado</span><span class="warn">Amarillo: pendiente</span><span class="bad">Rojo: conflicto</span><span class="info">Azul: seleccionable</span></div>';
 }
-
-function rBoards(){
-  ensureBoardData();const week=V.boardWeek||boardStartOfWeek(td());V.boardWeek=week;const dates=boardWeekDates(week),horses=activeBoardHorses();if(!_boardActiveTool&&D.boardConfig.activities.length)_boardActiveTool=D.boardConfig.activities[0].id;
-  const people=D.boardConfig.activities.filter(a=>a.category==='person'),acts=D.boardConfig.activities.filter(a=>a.category!=='person');
-  return `<div class="board-app" style="--board-row-count:${Math.max(1,horses.length)}"><section class="board-main-head"><div class="board-title"><div><span class="ey">EquiLog</span><h1>Pizarra semanal</h1></div><div id="board-save-state" class="board-save-state ${_saveState}"><span></span>${_saveState==='saving'?'Guardando…':_saveState==='offline'?'Sin conexión':'Guardado'}</div></div><div class="board-head-actions"><button onclick="V={name:'quickCapture'};render()">＋ Registro</button><button onclick="openBoardHorseManager()">＋ Caballos</button><button onclick="openBoardTools()">⚙︎</button></div></section><section class="board-tools">${people.length?`<div class="board-tool-group"><small>Personas</small><div>${people.map(a=>boardToolButton(a)).join('')}</div></div>`:''}<div class="board-tool-group"><small>Actividades</small><div>${acts.map(a=>boardToolButton(a)).join('')}</div></div><div class="board-special-tools"><button class="${_boardActiveTool==='note'?'active':''}" onclick="boardSelectTool('note')">✎<span>Nota</span></button><button class="${_boardActiveTool==='done'?'active':''}" onclick="boardSelectTool('done')">✓<span>Hecho</span></button><button class="${_boardActiveTool==='copy'?'active':''}" onclick="boardSelectTool('copy')">⧉<span>Copiar</span></button><button class="danger ${_boardActiveTool==='erase'?'active':''}" onclick="boardSelectTool('erase')">⌫<span>Borrar</span></button></div></section><section class="board-week-nav"><button onclick="boardShiftWeek(-1)">‹</button><button class="week-range" onclick="boardGoToday()"><b>${esc(boardRangeLabel(week))}</b><small>${week===boardStartOfWeek(td())?'Semana actual':'Ir a hoy'}</small></button><button onclick="boardShiftWeek(1)">›</button><button class="repeat-week" onclick="boardRepeatPreviousWeek()">↻ <span>Repetir anterior</span></button></section>${_boardActiveTool==='copy'&&_boardCopySource?`<div class="board-copy-hint">Origen: ${esc((D.horses.find(h=>h.id===_boardCopySource.hid)||{}).name||'Caballo')} · ${esc(boardDateLabel(_boardCopySource.date))}. Toca una casilla, el icono ⧉ de un caballo o el encabezado de un día.</div>`:''}<section class="board-grid-wrap"><table class="board-grid"><colgroup><col class="horse"><col span="7" class="day"></colgroup><thead><tr><th>Caballo</th>${dates.map(d=>`<th class="${d===td()?'today':''}" onclick="${_boardActiveTool==='copy'&&_boardCopySource?`boardCopyToDay('${d}')`:''}"><span>${esc(boardDateLabel(d).split(' ')[0])}</span><b>${d.slice(8,10)}</b>${_boardActiveTool==='copy'&&_boardCopySource?'<i>⧉</i>':''}</th>`).join('')}</tr></thead><tbody>${horses.map(h=>`<tr><th><div class="board-horse-cell"><button class="horse-name" onclick="openBoardHorseManager('${h.id}')">${h.photo?`<img src="${h.photo}" alt="">`:'<span>🐴</span>'}<b>${esc(h.name)}</b></button>${_boardActiveTool==='copy'&&_boardCopySource?`<button class="copy-row" onclick="boardCopyToHorse('${h.id}')" title="Copiar a toda la semana">⧉</button>`:''}</div></th>${dates.map(d=>boardCellHtml(h,d)).join('')}</tr>`).join('')||`<tr><td colspan="8" class="board-empty-state"><button onclick="openBoardHorseManager()">＋ Añade tu primer caballo</button></td></tr>`}</tbody></table></section><footer class="board-foot-hint"><span>${_boardActiveTool?(_boardActiveTool==='note'?'✎':_boardActiveTool==='done'?'✓':_boardActiveTool==='copy'?'⧉':_boardActiveTool==='erase'?'⌫':esc(boardActivity(_boardActiveTool).code)):'·'}</span><p>${boardToolHint()}</p></footer>${rBoardDialog()}${rBoardHorseManager()}${rBoardToolsEditor()}</div>`;
+function resourceCell(type,date,resourceId,slotId,position){
+  const a=boardAssignment(type,date,resourceId,slotId,position);if(!a)return `<td class="resource-cell free" ondragover="event.preventDefault()" ondrop="boardDrop(event,'${type}','${date}','${resourceId}','${slotId}',${position})" onclick="boardClickCell('${type}','${date}','${resourceId}','${slotId}',${position})"><span>＋ Libre</span></td>`;
+  const h=D.horses.find(x=>x.id===a.hid);const conflict=horseConflict(a.hid,date,type,slotId);
+  return `<td class="resource-cell occupied ${conflict?'conflict':''}" ondragover="event.preventDefault()" ondrop="boardDrop(event,'${type}','${date}','${resourceId}','${slotId}',${position})"><div class="assigned-horse" draggable="true" ondragstart="boardDragAssignment(event,'${a.id}')" onclick="event.stopPropagation();if(confirm('¿Quitar a ${esc(h?h.name:'este caballo')} de este hueco?'))removeBoardAssignment('${a.id}')"><span>${h&&h.photo?`<img src="${h.photo}" alt="">`:'🐴'}</span><b>${esc(h?h.name:'Caballo')}</b><small>${conflict?'⚠ Coincidencia':'Arrastra para mover'}</small></div></td>`;
 }
-function boardToolButton(a){return `<button class="board-tool ${boardToneClass(a.tone)} ${_boardActiveTool===a.id?'active':''}" onclick="boardSelectTool('${a.id}')"><strong>${esc(a.code)}</strong><span>${esc(a.label)}</span></button>`;}
-function boardToolHint(){if(!_boardActiveTool)return'Selecciona un botón y toca las casillas.';if(_boardActiveTool==='note')return'Toca una casilla para escribir o editar una nota.';if(_boardActiveTool==='done')return'Toca una casilla para marcar tareas realizadas.';if(_boardActiveTool==='copy')return _boardCopySource?'Toca destinos para copiar; las tareas quedarán pendientes.':'Toca la casilla que quieres copiar.';if(_boardActiveTool==='erase')return'Toca una casilla para borrarla.';const a=boardActivity(_boardActiveTool);return`Toca casillas para añadir o quitar ${a.code} · ${a.label}.`;}
-function boardCellHtml(h,date){const p=boardPlan(h.id,date);const ids=p?.activities||[],done=p?.completed||[];const allDone=ids.length&&done.length===ids.length;return `<td class="${date===td()?'today':''}"><button class="board-cell ${ids.length?'has-content':''} ${allDone?'all-done':''} ${p?.note?'has-note':''} ${_boardCopySource&&_boardCopySource.hid===h.id&&_boardCopySource.date===date?'copy-source':''}" onclick="boardCellClick('${h.id}','${date}')" title="${esc(p?.vetDetails||p?.note||'')}"><span class="cell-codes">${ids.length?ids.map((id,i)=>{const a=boardActivity(id),isDone=done.includes(id);return`<i class="cell-code ${boardToneClass(a.tone)} ${isDone?'done':''}">${i?'<b>+</b>':''}${isDone?'<em>✓</em>':''}${esc(a.code)}${a.code==='VET'?`<u class="vet-dot ${p?.vetDetails?'complete':'pending'}">${p?.vetDetails?'✓':'?'}</u>`:''}</i>`;}).join(''):'<i class="empty-dot">·</i>'}</span>${p?.note?`<small>${esc(p.note)}</small>`:''}</button></td>`;}
-
+function rBoardConfig(){
+  const c=D.boardConfig;
+  return `<div class="config-intro"><div><span class="ey">Personalización</span><h2>La pizarra de tu cuadra</h2><p>Configura abreviaturas, columnas periódicas, caminadores, huecos y horarios. Los cambios solo afectan a esta cuadra.</p></div></div>
+  <section class="config-section"><div class="section-title"><div><h2>Actividades</h2><p>Abreviaturas que aparecen en la pizarra principal.</p></div><button class="btn btsm" onclick="addBoardActivity()">+ Añadir</button></div><div class="config-list">${c.activities.map(a=>`<div class="config-row"><span class="config-code ${boardToneClass(a.tone)}">${esc(a.code)}</span><div><b>${esc(a.label)}</b><small>${a.id}</small></div><button class="db" onclick="deleteBoardActivity('${a.id}')">×</button></div>`).join('')}</div></section>
+  <section class="config-section"><div class="section-title"><div><h2>Columnas periódicas</h2><p>Herrajes, desparasitación, dientes y cualquier control propio.</p></div><button class="btn btsm" onclick="addPeriodicColumn()">+ Añadir</button></div><div class="config-list">${c.periodicColumns.map(x=>`<div class="config-row"><span class="config-code ${boardToneClass(x.tone)}">◷</span><div><b>${esc(x.label)}</b><small>Fecha y aviso visual</small></div><button class="db" onclick="deletePeriodicColumn('${x.id}')">×</button></div>`).join('')}</div></section>
+  <section class="config-section"><div class="section-title"><div><h2>Caminadores</h2><p>Cada caminador puede tener sus propios huecos y horarios.</p></div><button class="btn btsm" onclick="addWalker()">+ Añadir</button></div>${c.walkers.map(w=>`<div class="config-card"><div class="config-card-head"><div><b>${esc(w.name)}</b><small>${w.capacity} huecos</small></div><div><button class="btn btg btsm" onclick="editWalker('${w.id}')">Editar</button><button class="db" onclick="deleteWalker('${w.id}')">×</button></div></div><div class="slot-list">${w.slots.map(s=>`<span>${s.start}–${s.end}</span>`).join('')||'<small>Sin horarios</small>'}</div></div>`).join('')||'<div class="empty-soft"><span>C</span><div><b>Sin caminadores</b><p>Añade el primero cuando quieras.</p></div></div>'}</section>
+  <section class="config-section"><div class="section-title"><div><h2>Paddocks</h2><p>Elige nombres, número de espacios y franjas del día.</p></div><button class="btn btsm" onclick="addPaddock()">+ Paddock</button></div><div class="config-list">${c.paddocks.map(p=>`<div class="config-row"><span class="config-code ba-amber">P</span><div><b>${esc(p.name)}</b><small>Capacidad ${p.capacity||1}</small></div><button class="db" onclick="deletePaddock('${p.id}')">×</button></div>`).join('')}</div><div class="section-title compact"><div><h3>Franjas horarias</h3></div><button class="btn btg btsm" onclick="addPaddockSlot()">+ Horario</button></div><div class="slot-list editable">${c.paddockSlots.map(s=>`<span>${s.start}–${s.end}<button onclick="deletePaddockSlot('${s.id}')">×</button></span>`).join('')}</div></section>`;
+}
+function safeBoardId(prefix,label){return prefix+'_'+(label||'item').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,30)+'_'+Math.random().toString(36).slice(2,6);}
+function addBoardActivity(){const code=(prompt('Abreviatura (por ejemplo: S)')||'').trim().toUpperCase();if(!code)return;const label=(prompt('Nombre de la actividad')||'').trim();if(!label)return;D.boardConfig.activities.push({id:safeBoardId('act',label),code,label,tone:'blue'});save();render();}
+function deleteBoardActivity(id){if(!confirm('¿Eliminar esta actividad de la configuración?'))return;D.boardConfig.activities=D.boardConfig.activities.filter(x=>x.id!==id);save();render();}
+function addPeriodicColumn(){const label=(prompt('Nombre de la columna periódica')||'').trim();if(!label)return;D.boardConfig.periodicColumns.push({id:safeBoardId('periodic',label),label,tone:'blue'});save();render();}
+function deletePeriodicColumn(id){if(!confirm('¿Eliminar esta columna? Las fechas guardadas dejarán de mostrarse.'))return;D.boardConfig.periodicColumns=D.boardConfig.periodicColumns.filter(x=>x.id!==id);save();render();}
+function promptSlots(existing){const current=(existing||[]).map(s=>s.start+'-'+s.end).join(', ');const txt=prompt('Horarios separados por comas. Ejemplo: 08:00-09:00, 09:00-10:00, 17:00-18:00',current);if(txt===null)return null;return txt.split(',').map(x=>x.trim()).filter(Boolean).map((x,i)=>{const parts=x.split('-').map(v=>v.trim());return{id:uid(),start:parts[0]||'',end:parts[1]||''};}).filter(s=>/^\d{2}:\d{2}$/.test(s.start)&&/^\d{2}:\d{2}$/.test(s.end));}
+function addWalker(){const name=(prompt('Nombre del caminador','Caminador principal')||'').trim();if(!name)return;const capacity=Math.max(1,Math.min(20,Number(prompt('Número de huecos','4'))||4));const slots=promptSlots([]);if(slots===null)return;D.boardConfig.walkers.push({id:safeBoardId('walker',name),name,capacity,slots});save();render();}
+function editWalker(id){const w=D.boardConfig.walkers.find(x=>x.id===id);if(!w)return;const name=(prompt('Nombre del caminador',w.name)||'').trim();if(!name)return;const capacity=Math.max(1,Math.min(20,Number(prompt('Número de huecos',String(w.capacity)))||w.capacity));const slots=promptSlots(w.slots);if(slots===null)return;w.name=name;w.capacity=capacity;w.slots=slots;save();render();}
+function deleteWalker(id){if(!confirm('¿Eliminar este caminador?'))return;D.boardConfig.walkers=D.boardConfig.walkers.filter(x=>x.id!==id);D.boardAssignments=D.boardAssignments.filter(a=>a.resourceId!==id);save();render();}
+function addPaddock(){const name=(prompt('Nombre del paddock','Paddock '+(D.boardConfig.paddocks.length+1))||'').trim();if(!name)return;D.boardConfig.paddocks.push({id:safeBoardId('paddock',name),name,capacity:1});save();render();}
+function deletePaddock(id){if(!confirm('¿Eliminar este paddock?'))return;D.boardConfig.paddocks=D.boardConfig.paddocks.filter(x=>x.id!==id);D.boardAssignments=D.boardAssignments.filter(a=>a.resourceId!==id);save();render();}
+function addPaddockSlot(){const slots=promptSlots([]);if(slots===null||!slots.length)return;D.boardConfig.paddockSlots.push(...slots);D.boardConfig.paddockSlots.sort((a,b)=>a.start.localeCompare(b.start));save();render();}
+function deletePaddockSlot(id){if(!confirm('¿Eliminar esta franja horaria?'))return;D.boardConfig.paddockSlots=D.boardConfig.paddockSlots.filter(x=>x.id!==id);D.boardAssignments=D.boardAssignments.filter(a=>a.slotId!==id);save();render();}
 
 function openMorePanel(){
   const panel=document.getElementById('more-panel');
   const content=document.getElementById('more-panel-content');
   if(!panel||!content)return;
   const items=[];
-  items.push({icon:'▦',title:'Pizarra',sub:'Plan semanal de la cuadra',go:"V={name:'boards',boardWeek:boardStartOfWeek(td())};render()"});
-  if(canPerm('stable'))items.push({icon:'🏠',title:'Cuadra',sub:'Tareas y gastos generales',go:"V={name:'cuadra',tab:'tareas'};render()"});
+  items.push({icon:'▦',title:'Pizarra semanal',sub:'Volver a la pantalla principal',go:"V={name:'board',boardWeek:V.boardWeek||boardStartOfWeek(td())};render()"});
+  items.push({icon:'＋',title:'Registro rápido',sub:'Salud, gasto o recordatorio',go:"pzOpenQuick('health')"});
+  items.push({icon:'🐴',title:'Caballos',sub:'Fichas, orden y estado',go:'pzOpenHorses()'});
+  items.push({icon:'✓',title:'Tareas de hoy',sub:'Agenda diaria del equipo',go:"V={name:'day',dd:td()};render()"});
   items.push({icon:'🔔',title:'Alertas',sub:'Avisos y recordatorios',go:"V={name:'alerts'};render()"});
+  items.push({icon:'⌂',title:'Resumen de la cuadra',sub:'Inicio clásico con el estado del día',go:"V={name:'home'};render()"});
+  if(canPerm('team'))items.push({icon:'👥',title:'Equipo',sub:'Personas, permisos y calendario',go:"V={name:'team'};render()"});
+  items.push({icon:'▦',title:'Caminador y paddocks',sub:'Pizarras de instalaciones',go:"V={name:'boards',tab:'walker',boardDate:td()};render()"});
+  if(canPerm('stable'))items.push({icon:'🏠',title:'Cuadra',sub:'Tareas y gastos generales',go:"V={name:'cuadra',tab:'tareas'};render()"});
   if(canPerm('stats'))items.push({icon:'▥',title:'Estadísticas',sub:'Actividad y finanzas',go:"V={name:'stats'};render()"});
+  items.push({icon:'⚙',title:'Configurar la pizarra',sub:'Botones de personas y actividades',go:'pzOpenTools()'});
   items.push({icon:'👤',title:'Mi perfil',sub:'Datos personales y sesión',go:'openUserPanel()'});
   items.push({icon:'⇄',title:'Cambiar de cuadra',sub:'Abrir otra cuadra',go:'openStablePanel()'});
   content.innerHTML=items.map(i=>`<button class="more-item" onclick="closeMorePanel();${i.go}"><span>${i.icon}</span><div><b>${i.title}</b><small>${i.sub}</small></div><i>→</i></button>`).join('');
@@ -1505,6 +1512,21 @@ function render(){
   const fab=document.getElementById("fab");
   fab.style.display="none";fab.onclick=null;
   let nm=V.name;
+
+  // ---- PIZARRA SEMANAL: pantalla principal de EquiLog ----
+  // Ocupa todo el viewport, sin navegación inferior ni FAB.
+  const isBoard=(nm==='board'&&typeof window.rBoard==='function');
+  document.body.classList.toggle('pz-mode',isBoard);
+  const nav=document.querySelector('nav.bn');
+  if(nav)nav.style.display=isBoard?'none':'flex';
+  if(isBoard){
+    document.getElementById("nb-home")?.classList.add("active");
+    try{ app.innerHTML=window.rBoard(); }
+    catch(err){ app.innerHTML=`<div class="em"><p style="color:var(--ro)">Error en la pizarra: ${esc(err.message)}</p></div>`; console.error(err); }
+    if(typeof window.pzMounted==='function')window.pzMounted();
+    return;
+  }
+
   if((['team','addMember','editMember','teamReport','templates','editTemplate'].includes(nm) && !canPerm('team')) ||
      (['cuadra','newCT','newCE'].includes(nm) && !canPerm('stable')) ||
      (nm==='stats' && !canPerm('stats')) ||
@@ -1516,14 +1538,13 @@ function render(){
      (['newTask','editTask'].includes(nm) && !canPerm('tasks'))){
     nm='list'; V={name:'list'};
   }
-  document.getElementById("nb-home")?.classList.toggle("active",nm==="boards");
+  document.getElementById("nb-home")?.classList.toggle("active",nm==="home");
   document.getElementById("nb-horses")?.classList.toggle("active",["list","addHorse","editHorse","horse","newTraining","newHealth","newExpense","expenseSettlement","report"].includes(nm));
-  document.getElementById("nb-day")?.classList.toggle("active",nm==="quickCapture");
+  document.getElementById("nb-day")?.classList.toggle("active",["day","newTask","editTask","smartOrder"].includes(nm));
   document.getElementById("nb-team")?.classList.toggle("active",["team","addMember","editMember","memberDay","teamReport","templates","editTemplate","teamCalendar"].includes(nm));
-  document.body.classList.toggle("board-mode",nm==="boards");
   try{
     const views={
-      home:rHome, boards:rBoards, quickCapture:rQuickCapture, list:rList, addHorse:()=>rHF(null), editHorse:()=>rHF(D.horses.find(h=>h.id===V.hid)),
+      home:rHome, boards:rBoards, boardCell:rBoardCell, list:rList, addHorse:()=>rHF(null), editHorse:()=>rHF(D.horses.find(h=>h.id===V.hid)),
       horse:()=>rHorse(V.hid), newTraining:()=>rNT(V.hid), newHealth:()=>rNH(V.hid,V.eid),
       newExpense:()=>rNE(V.hid,V.eid), expenseSettlement:()=>rExpenseSettlement(V.hid), report:()=>rRep(V.hid),
       day:()=>rDay(V.dd||td()), smartOrder:()=>rSmartOrder(), newTask:()=>rNTask(null), editTask:()=>rNTask(D.tasks.find(t=>t.id===V.tid)),
@@ -1661,7 +1682,6 @@ function delHorse(id){
   D.healthDocs=(D.healthDocs||[]).filter(r=>r.hid!==id);
   D.expenses=D.expenses.filter(e=>e.hid!==id);
   D.tasks=D.tasks.filter(t=>t.hid!==id);
-  D.weeklyPlans=(D.weeklyPlans||[]).filter(p=>p.hid!==id);
   save();V={name:"list"};render();toast("Caballo eliminado");
 }
 
@@ -3643,7 +3663,7 @@ function attach(){
     const totalPctHF=ownersArr.reduce((s,o)=>s+o.pct,0);
     if(ownersArr.length&&Math.abs(totalPctHF-100)>0.5){toast('Los porcentajes deben sumar 100%');return;}
     const legacyOwner=ownersArr.length?ownersArr[0].nombre:'';
-    const horse={id,name,owner:legacyOwner,owners:ownersArr.length?ownersArr:[],breed:gv('h-breed').trim(),aliases:gv('h-aliases').trim(),origin:gv('h-origin').trim(),dob:gv('h-dob'),arrival:gv('h-arr'),notes:gv('h-notes').trim(),sire:gv('h-sire').trim(),dam:gv('h-dam').trim(),gsire:gv('h-gsire').trim(),gdam:gv('h-gdam').trim(),mgsire:gv('h-mgsire').trim(),mgdam:gv('h-mgdam').trim(),horsetelex:gv('h-horsetelex').trim(),photo:pf2&&pf2.dataset.value?pf2.dataset.value:(ex?ex.photo:null),active:ex?ex.active!==false:true,status:ex?(ex.status||'Activo'):'Activo',location:ex?(ex.location||''):''};
+    const horse={id,name,owner:legacyOwner,owners:ownersArr.length?ownersArr:[],breed:gv('h-breed').trim(),aliases:gv('h-aliases').trim(),origin:gv('h-origin').trim(),dob:gv('h-dob'),arrival:gv('h-arr'),notes:gv('h-notes').trim(),sire:gv('h-sire').trim(),dam:gv('h-dam').trim(),gsire:gv('h-gsire').trim(),gdam:gv('h-gdam').trim(),mgsire:gv('h-mgsire').trim(),mgdam:gv('h-mgdam').trim(),horsetelex:gv('h-horsetelex').trim(),photo:pf2&&pf2.dataset.value?pf2.dataset.value:(ex?ex.photo:null)};
     // Preservar datos de venta existentes (precio, etc.) al editar
     if(ex&&ex.sale){horse.sale=ex.sale;}
     if(ed){D.horses=D.horses.map(h=>h.id===id?horse:h);}else{D.horses.push(horse);}
@@ -3744,9 +3764,10 @@ function attach(){
 }
 
 /* === BOTTOM NAV + INIT === */
-document.getElementById('nb-home').onclick=()=>{V={name:'boards',boardWeek:boardStartOfWeek(td())};render()};
+document.getElementById('nb-home').onclick=()=>{V={name:'board',boardWeek:V.boardWeek||boardStartOfWeek(td())};render()};
 document.getElementById('nb-horses').onclick=()=>{V={name:'list'};render()};
-document.getElementById('nb-day').onclick=()=>{V={name:'quickCapture'};render()};
+document.getElementById('nb-day').onclick=()=>{V={name:'day',dd:td()};render()};
+document.getElementById('nb-team').onclick=()=>{V={name:'team'};render()};
 document.getElementById('nb-more').onclick=()=>openMorePanel();
 // Show loading until Firebase auth resolves
 showScreen('loading');
