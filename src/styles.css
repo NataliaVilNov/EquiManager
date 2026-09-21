@@ -267,3 +267,245 @@ input:focus,textarea:focus,select:focus{box-shadow:0 0 0 3px rgba(70,82,63,.10)}
 .plan-cell.quick-mode{cursor:crosshair}.plan-cell.quick-mode:hover{box-shadow:inset 0 0 0 2px var(--az)}.plan-code.quick-hit{box-shadow:0 0 0 2px rgba(58,95,130,.28)}
 .compact-board .periodic-head span{display:block;overflow:hidden;text-overflow:ellipsis}.compact-board .periodic-cell{padding:.1rem!important;cursor:pointer}.periodic-compact{width:100%;height:100%;min-height:38px;border:1px solid currentColor;border-radius:6px;background:#fff;padding:.08rem;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;overflow:hidden}.periodic-compact b{font-size:clamp(.48rem,.95vw,.62rem);line-height:1}.periodic-compact small{font-size:clamp(.38rem,.75vw,.52rem);line-height:1.05;margin-top:.12rem;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:600px){.quick-board-actions{display:grid;grid-template-columns:repeat(4,1fr)}.quick-board-btn{min-width:0;padding:.3rem .18rem;flex-direction:column;gap:.05rem}.quick-board-btn small{display:none}.compact-board col.col-horse{width:19%}.weekly-board.compact-board th,.weekly-board.compact-board td{height:44px}.board-horse-name img,.board-horse-name>span{width:17px;height:17px}.compact-board .plan-code{min-width:15px;height:16px;padding:0 .08rem}.periodic-compact small{display:none}}
+
+/* =====================================================================
+   EQUILOG · CAPA HIG (Apple Human Interface Guidelines aplicadas a web)
+   Orden: accesibilidad → convenciones → oficio. Mantiene la identidad
+   (oliva de guarnicionería + crema + Cormorant) y corrige legibilidad,
+   objetivos táctiles, áreas seguras y hojas modales.
+   ===================================================================== */
+:root{
+  /* Texto secundario: #7C756A daba 4.26:1 sobre crema y 3.54:1 sobre arena.
+     #6A6358 → 5.55:1 sobre #FAF7F1 y 4.61:1 sobre #EAE2D3 (AA). */
+  --gr:#6A6358;
+  /* Rojo destructivo: 5.67:1 sobre crema */
+  --ro:#A0473E;
+  --am-text:#8A5A06;
+  --surface:#FFFEFB;
+  --sep:rgba(60,52,40,.13);
+  --tap:44px;
+  --safe-t:env(safe-area-inset-top,0px);
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --safe-l:env(safe-area-inset-left,0px);
+  --safe-r:env(safe-area-inset-right,0px);
+  --header-h:56px;
+  --ease:cubic-bezier(.32,.72,0,1);
+  color-scheme:light;
+}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+/* Tamaño base en rem: respeta el tamaño de texto que la persona elige en el navegador (Dynamic Type en web). */
+body{font-size:1rem;line-height:1.5;padding-bottom:calc(84px + var(--safe-b));-webkit-tap-highlight-color:transparent}
+.sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* ---------- Foco visible para teclado ---------- */
+:focus{outline:none}
+:focus-visible{outline:3px solid rgba(70,82,63,.55);outline-offset:2px;border-radius:10px}
+input:focus-visible,textarea:focus-visible,select:focus-visible{outline:none}
+
+/* ---------- Tipografía: mínimos legibles (11 pt caption, 17 pt body en iOS) ---------- */
+.ey{font-size:.72rem;letter-spacing:.14em}
+label{font-size:.8125rem;letter-spacing:0;text-transform:none;font-weight:700;color:var(--ti);margin-bottom:.35rem}
+.ltag{font-size:.6875rem;letter-spacing:.06em}
+.st .l,.home-stat small,.quick-action small,.config-row small,.resource-title small{font-size:.75rem}
+.home-stat small{letter-spacing:0}
+.tc-su,.xm,.rrm,.tkm,.pll,.pd{font-size:.8125rem}
+.sb,.ap,.frb,.tka,.br{font-size:.72rem}
+.footnote{font-size:.8125rem;color:var(--gr);line-height:1.45}
+.center{text-align:center}
+
+/* ---------- Controles: objetivo táctil 44 × 44 ---------- */
+.btn{min-height:var(--tap);font-size:.9375rem;letter-spacing:0;text-transform:none;font-weight:700;padding:.65rem 1.2rem}
+.btsm{min-height:36px;font-size:.8125rem;padding:.4rem .85rem}
+.btn:disabled,.sheet-btn:disabled{opacity:.5;cursor:default}
+.btn:active{transform:scale(.98)}
+.ib{width:var(--tap);height:var(--tap);font-size:1rem}
+.tab{min-height:38px;font-size:.8125rem;letter-spacing:0;text-transform:none}
+.ro{width:40px;height:40px}
+.db{min-width:36px;min-height:36px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;color:var(--gr);font-size:1.05rem}
+.db:hover{background:#FBEDEB;color:var(--ro)}
+.ck{width:30px;height:30px}
+.text-link{font-size:.875rem;min-height:36px}
+.fl{min-height:40px;display:inline-flex;align-items:center;font-size:.875rem;text-transform:none;letter-spacing:0}
+.oo{min-height:64px;font-size:.78rem}
+.pc{min-height:36px;font-size:.8125rem}
+
+/* ---------- Campos: 16 px evita el zoom automático de iOS al enfocar ---------- */
+input,textarea,select{font-size:1rem;min-height:var(--tap)}
+@media (pointer:coarse){input,textarea,select{font-size:16px!important}}
+input[aria-invalid="true"]{border-color:var(--ro);box-shadow:0 0 0 3px rgba(160,71,62,.12)}
+.form-err{font-size:.875rem;color:var(--ro);margin:-.25rem 0 .85rem;line-height:1.4}
+
+/* ---------- Áreas seguras ---------- */
+header{padding-top:var(--safe-t);padding-left:var(--safe-l);padding-right:var(--safe-r)}
+.vh{top:calc(var(--header-h) + var(--safe-t))}
+.wrap{padding-left:max(1rem,var(--safe-l));padding-right:max(1rem,var(--safe-r))}
+.fab{bottom:calc(76px + var(--safe-b));right:max(1rem,var(--safe-r));width:56px;height:56px}
+.fab .ico{width:26px;height:26px;stroke:#fff;stroke-width:2.2}
+.toast{bottom:calc(88px + var(--safe-b));white-space:normal;max-width:min(92vw,440px);width:max-content;text-align:center;line-height:1.4;font-size:.875rem;border-radius:16px;padding:.7rem 1.1rem;z-index:700}
+body.sheet-open .toast{bottom:calc(24px + var(--safe-b))}
+
+/* ---------- Iconos SVG (un solo sistema) ---------- */
+.ico{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.ico-sm{width:14px;height:14px;stroke-width:2.2}
+
+/* ---------- Cabecera ---------- */
+.bar{height:var(--header-h);gap:.5rem}
+.logo{min-height:var(--tap);padding:0 .35rem 0 0;border-radius:12px;min-width:0;color:var(--ti)}
+.logo-word{font-family:"Cormorant Garamond",serif;font-weight:600;font-size:1.3rem}
+.stable-pill{font-family:Mulish,sans-serif;font-size:.75rem;font-weight:700;color:var(--vd);background:var(--vl);border-radius:999px;padding:.2rem .6rem;max-width:40vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stable-pill:empty{display:none}
+.logo .ico-sm{color:var(--gr)}
+.avatar-btn{display:flex;align-items:center;gap:.5rem;min-height:var(--tap);background:none;border:none;padding:0 0 0 .5rem;border-radius:999px;color:var(--gr);flex-shrink:0}
+.avatar-name{font-size:.875rem;font-weight:700;max-width:28vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.avatar-dot{width:36px;height:36px;border-radius:50%;background:var(--v);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.95rem;overflow:hidden;box-shadow:0 0 0 2px var(--fo),0 0 0 3px var(--li)}
+.avatar-dot img{width:100%;height:100%;object-fit:cover}
+@media(max-width:380px){.avatar-name{display:none}}
+
+/* ---------- Barra de pestañas ---------- */
+.bn{padding:0 var(--safe-r) var(--safe-b) var(--safe-l);background:rgba(255,254,251,.94);backdrop-filter:saturate(1.4) blur(14px);-webkit-backdrop-filter:saturate(1.4) blur(14px)}
+.nb{min-height:56px;gap:.18rem;font-size:.6875rem;letter-spacing:0;text-transform:none;font-weight:700;padding:.45rem .2rem .4rem;color:var(--gr)}
+.nb .ni{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;padding:0;background:none!important;min-width:0!important}
+.nb.active{color:var(--vd);transform:none}
+.nb.active .ni{stroke-width:2.2}
+.nb.active span{font-weight:800}
+.nb.active::before{content:"";position:absolute;top:0;left:30%;right:30%;height:3px;border-radius:0 0 3px 3px;background:var(--v)}
+.nb{position:relative}
+
+/* ---------- Pantallas completas (acceso y selector de cuadra) ---------- */
+.screen{position:fixed;inset:0;z-index:490;background:var(--fo);overflow-y:auto;-webkit-overflow-scrolling:touch}
+#auth-screen{z-index:500}
+.screen-inner{max-width:520px;margin:0 auto;padding:calc(1.5rem + var(--safe-t)) max(1.1rem,var(--safe-r)) calc(3rem + var(--safe-b)) max(1.1rem,var(--safe-l))}
+.screen-inner.narrow{max-width:400px;padding-top:calc(3rem + var(--safe-t))}
+.brand-block{text-align:center;margin-bottom:2rem}
+.brand-name{font-family:"Cormorant Garamond",serif;font-size:2.5rem;font-weight:600;color:var(--ti);line-height:1}
+.brand-sub{font-size:.75rem;letter-spacing:.18em;text-transform:uppercase;color:var(--v);font-weight:800;margin-top:.4rem}
+.seg{display:flex;background:var(--ar);border-radius:12px;padding:3px;margin-bottom:1.5rem}
+.seg-btn{flex:1;min-height:38px;border:none;border-radius:9px;background:none;color:var(--gr);font-size:.9375rem;font-weight:700}
+.seg-btn.active{background:#fff;color:var(--ti);box-shadow:0 1px 3px rgba(0,0,0,.1)}
+#auth-login-form .btn,#auth-register-form .btn{margin:.25rem 0 1rem}
+.screen-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1.25rem}
+.screen-title{font-size:2rem}
+.stable-card{width:100%;display:flex;align-items:center;gap:.8rem;background:var(--surface);border:1px solid var(--li);border-radius:14px;padding:.85rem;margin-bottom:.6rem;text-align:left;min-height:68px;box-shadow:var(--shadow-sm);transition:border-color .15s}
+.stable-card:hover{border-color:var(--v)}
+.join-row{display:flex;gap:.5rem}
+.join-row input{flex:1;text-transform:uppercase;letter-spacing:.08em}
+
+/* ---------- Hojas (sheets) ----------
+   Una hoja por vez · grabber · deslizar para cerrar · Cancelar a la izquierda
+   y acción principal a la derecha · el contenido desplaza dentro de la hoja
+   (antes el perfil crecía por encima de la pantalla y no se podía cerrar). */
+.sheet-overlay{position:fixed;left:0;right:0;top:var(--vvtop,0px);height:var(--vvh,100dvh);z-index:600;display:flex;align-items:flex-end;justify-content:center;background:rgba(36,33,29,.42);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);animation:ov-in .22s ease both}
+.sheet-overlay.is-closing{animation:ov-out .18s ease both}
+.sheet{position:relative;width:100%;max-width:640px;display:flex;flex-direction:column;
+  max-height:calc(var(--vvh,100dvh) - var(--safe-t) - 10px);
+  background:var(--fo);border-radius:22px 22px 0 0;padding:0;overflow:hidden;
+  box-shadow:0 -10px 40px rgba(36,33,29,.22);animation:sheet-in .34s var(--ease) both;transition:transform .28s var(--ease)}
+.sheet-large{height:calc(var(--vvh,100dvh) - var(--safe-t) - 10px)}
+.sheet-overlay.is-closing .sheet{animation:sheet-out .18s ease-in both}
+.sheet-grabber{width:38px;height:5px;border-radius:3px;background:rgba(60,52,40,.22);margin:7px auto 0;flex-shrink:0}
+.sheet-bar{display:grid;grid-template-columns:minmax(80px,1fr) auto minmax(80px,1fr);align-items:center;gap:.5rem;padding:.2rem max(.5rem,var(--safe-r)) .35rem max(.5rem,var(--safe-l));flex-shrink:0;border-bottom:1px solid transparent;touch-action:none}
+.sheet-bar h2{font-family:Mulish,sans-serif;font-size:1.0625rem;font-weight:800;color:var(--ti);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sheet-bar>:first-child{justify-self:start}.sheet-bar>:last-child{justify-self:end}
+.sheet-btn{min-height:var(--tap);min-width:var(--tap);padding:0 .7rem;border:none;background:none;border-radius:12px;color:var(--v);font-size:1.0625rem;font-weight:600}
+.sheet-btn.strong{font-weight:800;color:var(--vd)}
+.sheet-btn:hover{background:rgba(70,82,63,.08)}
+.sheet-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:.4rem max(1rem,var(--safe-r)) calc(1.5rem + var(--safe-b)) max(1rem,var(--safe-l))}
+.sheet-lead{font-family:"Cormorant Garamond",serif;font-size:1.5rem;margin-bottom:.3rem}
+body.sheet-open{overflow:hidden}
+@keyframes sheet-in{from{transform:translateY(100%)}to{transform:none}}
+@keyframes sheet-out{to{transform:translateY(100%)}}
+@keyframes ov-in{from{background:rgba(36,33,29,0)}}
+@keyframes ov-out{to{background:rgba(36,33,29,0)}}
+/* Tablet y escritorio: diálogo centrado, sin grabber */
+@media (min-width:700px){
+  .sheet-overlay{align-items:center;padding:24px}
+  .sheet,.sheet-large{border-radius:20px;max-height:min(820px,calc(var(--vvh,100vh) - 48px));height:auto;max-width:560px;animation:dialog-in .22s var(--ease) both}
+  .sheet-large{height:min(760px,calc(var(--vvh,100vh) - 48px))}
+  .sheet-grabber{display:none}
+  .sheet-bar{padding-top:.5rem}
+  .sheet-overlay.is-closing .sheet{animation:dialog-out .16s ease-in both}
+}
+@keyframes dialog-in{from{opacity:0;transform:scale(.97)}}
+@keyframes dialog-out{to{opacity:0;transform:scale(.97)}}
+
+/* ---------- Listas agrupadas (estilo Ajustes) ---------- */
+.group-title{font-size:.8125rem;font-weight:700;color:var(--gr);margin:1.4rem .9rem .45rem;letter-spacing:0}
+.group{background:var(--surface);border:1px solid var(--sep);border-radius:14px;overflow:hidden}
+.group-foot{font-size:.8125rem;color:var(--gr);margin:.5rem .9rem 0;line-height:1.45}
+.row{display:flex;align-items:center;gap:.75rem;width:100%;min-height:50px;padding:.6rem .9rem;background:none;border:none;text-align:left;color:var(--ti);font-size:1rem;position:relative}
+.row+.row::before,.row-field+.row-field::before,.row+.row-field::before,.row-field+.row::before{content:"";position:absolute;top:0;left:.9rem;right:0;height:1px;background:var(--sep);pointer-events:none}
+button.row:hover{background:rgba(70,82,63,.05)}
+button.row:active{background:rgba(70,82,63,.1)}
+.row-label{flex:1;min-width:0;line-height:1.3;overflow-wrap:anywhere}
+.row-label small{display:block;font-size:.8125rem;color:var(--gr);margin-top:.1rem;font-weight:500}
+.row-label.muted{color:var(--gr)}
+.row-label.link{color:var(--v);font-weight:700}
+.row-value{color:var(--gr);font-size:.9375rem;text-align:right;flex-shrink:0;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-value.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.08em;color:var(--vd);font-weight:700}
+.row .chev{width:16px;height:16px;color:#A69E90;stroke-width:2.4}
+.row-danger .row-label{color:var(--ro);font-weight:700;text-align:center}
+.row-icon{width:32px;height:32px;border-radius:9px;background:var(--vl);display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;color:var(--vd)}
+.row-rich{min-height:60px}
+.row-rich .row-label{font-weight:700}
+.row-field{position:relative;display:flex;align-items:center;gap:.75rem;padding:.2rem .9rem;min-height:50px}
+.row-field label{flex:0 0 5.6rem;margin:0;font-size:1rem;font-weight:600;color:var(--ti)}
+.row-field input,.row-field textarea{flex:1;min-width:0;border:none;background:transparent;padding:.55rem 0;box-shadow:none!important;border-radius:0;color:var(--ti)}
+.row-field textarea{resize:none;min-height:0}
+.row-field.stacked{flex-direction:column;align-items:stretch;gap:0;padding-top:.65rem}
+.row-field.stacked label{flex:none}
+.row-field:focus-within{background:rgba(237,241,232,.45)}
+@media (max-width:360px){.row-field:not(.stacked){flex-direction:column;align-items:stretch;gap:0;padding-top:.6rem}.row-field label{flex:none;font-size:.875rem;color:var(--gr)}}
+
+/* ---------- Perfil ---------- */
+.profile-id{display:flex;flex-direction:column;align-items:center;text-align:center;padding:.6rem 0 .4rem}
+.profile-avatar{width:96px;height:96px;border-radius:50%;background:var(--v);color:#fff;display:flex;align-items:center;justify-content:center;font-family:"Cormorant Garamond",serif;font-size:2.6rem;font-weight:600;overflow:hidden;box-shadow:0 0 0 4px var(--fo),0 0 0 5px var(--li),0 8px 24px rgba(55,65,47,.18)}
+.profile-avatar img{width:100%;height:100%;object-fit:cover}
+.profile-photo-actions{display:flex;gap:.25rem;margin:.55rem 0 .35rem}
+.link-btn{display:inline-flex;align-items:center;min-height:36px;padding:0 .6rem;border:none;background:none;border-radius:10px;color:var(--v);font-size:.9375rem;font-weight:700;margin:0;cursor:pointer;text-transform:none;letter-spacing:0}
+.link-btn:hover{background:rgba(70,82,63,.08)}
+.link-btn.danger{color:var(--ro)}
+.profile-name{font-family:"Cormorant Garamond",serif;font-size:1.75rem;font-weight:600;color:var(--ti);line-height:1.15;overflow-wrap:anywhere}
+.profile-email{font-size:.9375rem;color:var(--gr);margin-top:.15rem;overflow-wrap:anywhere;max-width:100%}
+.role-pill{display:inline-block;margin-top:.6rem;background:var(--vl);color:var(--vd);font-size:.8125rem;font-weight:700;border-radius:999px;padding:.25rem .75rem;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.task-row{gap:.65rem}
+.task-time{font-variant-numeric:tabular-nums;font-weight:800;color:var(--vd);font-size:.875rem;min-width:3.1rem}
+.task-row.is-done .row-label{color:var(--gr);text-decoration:line-through;text-decoration-color:rgba(106,99,88,.5)}
+.status-dot{font-size:.75rem;font-weight:800;border-radius:999px;padding:.18rem .55rem;flex-shrink:0}
+.status-dot.ok{background:#E8F3E4;color:#2F5A2B}
+.status-dot.pending{background:#FFF3D8;color:var(--am-text)}
+.mini-progress{width:84px;height:6px;border-radius:999px;background:var(--ar);overflow:hidden;flex-shrink:0}
+.mini-progress span{display:block;height:100%;background:var(--v);border-radius:999px}
+.pulse-once{animation:pulse-save .5s ease}
+@keyframes pulse-save{50%{background:rgba(70,82,63,.14)}}
+
+/* ---------- Panel de cuadra ---------- */
+.stable-hero{padding:.4rem .2rem .2rem}
+.stable-hero-name{font-family:"Cormorant Garamond",serif;font-size:1.75rem;font-weight:600;color:var(--ti);line-height:1.15;overflow-wrap:anywhere}
+.you-tag{display:inline-block;margin-left:.35rem;font-size:.72rem;font-weight:800;color:var(--vd);background:var(--vl);border-radius:999px;padding:.05rem .45rem;vertical-align:1px}
+.stable-hero .footnote{margin-top:.2rem}
+
+/* ---------- Contraste: texto sobre colores de estado ---------- */
+.ck.inprogress{color:var(--am-text)}
+.vpw{color:var(--am-text)}
+
+/* ---------- Movimiento y transparencia reducidos ---------- */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+}
+@media (prefers-reduced-transparency: reduce){
+  header,.bn,.sheet-overlay,.sheet-overlay *{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+  header,.bn{background:var(--surface)}
+}
+@media (prefers-contrast: more){
+  :root{--gr:#4F493F;--li:#A89E8C;--sep:rgba(40,34,26,.35)}
+  .btn,.card,.group,.hc,.tc,.xc,.tkc,.mc{border-width:1.5px}
+}
+@media (hover:none){.btn:hover{background:transparent;color:var(--v)}.bts:hover{background:var(--v);color:var(--fo)}.btr:hover{background:transparent;color:var(--ro)}.btg:hover{background:transparent;color:var(--gr)}}
+
+/* Ajustes finos tras revisión visual */
+.logo{border:none;background:none;cursor:pointer;display:flex;align-items:center;gap:.45rem;text-align:left}
+.nb.active .ni,.nb .ni{padding:0;background:none;min-width:0;border-radius:0;height:26px}
+.sheet-bar h2:focus{outline:none}
+.home-date{text-transform:none}
+.row-icon .ico{width:18px;height:18px}
+.join-row input::placeholder{text-transform:none;letter-spacing:0}

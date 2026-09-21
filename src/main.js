@@ -1,5 +1,4 @@
 import "./styles.css";
-import "./pizarra.css";
 
 function showStartupError(message) {
   console.error(message);
