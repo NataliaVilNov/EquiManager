@@ -1,153 +1,188 @@
 <!DOCTYPE html>
-
 <html lang="es">
 <head>
 <meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="theme-color" content="#FAF7F1"/>
+<meta name="color-scheme" content="light"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="default"/>
 <title>EquiLog</title>
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&amp;family=Mulish:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&amp;family=Mulish:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
-
 </head>
 <body>
 <noscript><div style="padding:2rem;font-family:Arial,sans-serif">EquiLog necesita JavaScript activado para funcionar.</div></noscript>
+
+<!-- Iconos (un único sistema, trazo 1.8) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3.5 10.5 12 3.8l8.5 6.7V20a1 1 0 0 1-1 1h-5v-6h-5v6h-5a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-horse" viewBox="0 0 24 24"><path d="M8 21v-5.5c-1.6-.9-3-2.6-3-5.2C5 6.6 7.8 4 11.3 4l1.2-1.5L13.4 4c3.4.6 5.6 3.6 5.6 7.4l1.5 3.3c.3.7-.2 1.4-.9 1.4h-1.3l-.8-1.6-1.5.7V21"/><path d="M12.5 8.5h.01"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><path d="m8 12.3 2.8 2.7L16.2 9.5"/></symbol>
+  <symbol id="i-team" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.8 20c.6-3.4 3.1-5.5 6.2-5.5s5.6 2.1 6.2 5.5"/><path d="M15.5 4.8a3.3 3.3 0 0 1 0 6.4M17.6 14.8c1.9.7 3.2 2.5 3.6 5.2"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-board" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M3.5 9.5h17M9 9.5v10M15 9.5v10"/></symbol>
+  <symbol id="i-barn" viewBox="0 0 24 24"><path d="M3.5 10 12 4l8.5 6v10h-17z"/><path d="M9 20v-6h6v6M9 14l6 6M15 14l-6 6"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20h16"/><path d="M7 16v-4M12 16V7M17 16v-7"/></symbol>
+  <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c.8-4 3.8-6.3 7.5-6.3s6.7 2.3 7.5 6.3"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+</svg>
+
 <!-- AUTH SCREEN -->
-<div id="auth-screen" style="display:none;position:fixed;inset:0;z-index:500;background:var(--fo);overflow-y:auto">
-<div style="max-width:380px;margin:0 auto;padding:2.5rem 1.2rem 3rem">
-<div style="text-align:center;margin-bottom:2rem">
-<div style="font-family:'Cormorant Garamond',serif;font-size:2rem;font-weight:600;color:var(--ti)">EquiLog</div>
-<div style="font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;color:var(--v);font-weight:700;margin-top:.2rem">Gestión ecuestre</div>
+<div id="auth-screen" class="screen" style="display:none">
+  <div class="screen-inner narrow">
+    <div class="brand-block">
+      <div class="brand-name">EquiLog</div>
+      <div class="brand-sub">Gestión ecuestre</div>
+    </div>
+    <div class="seg" role="tablist" aria-label="Acceso">
+      <button id="auth-tab-login" class="seg-btn active" role="tab" aria-selected="true" onclick="authTab('login')">Entrar</button>
+      <button id="auth-tab-register" class="seg-btn" role="tab" aria-selected="false" onclick="authTab('register')">Crear cuenta</button>
+    </div>
+    <form id="auth-login-form" onsubmit="event.preventDefault();doLogin()">
+      <div class="f"><label for="login-email">Email</label><input autocomplete="email" id="login-email" placeholder="tu@email.com" type="email" inputmode="email" autocapitalize="off" required/></div>
+      <div class="f"><label for="login-pass">Contraseña</label><input autocomplete="current-password" id="login-pass" type="password" required/></div>
+      <div id="auth-err" class="form-err" role="alert" style="display:none"></div>
+      <button class="btn bts btbl" type="submit">Entrar</button>
+    </form>
+    <form id="auth-register-form" style="display:none" onsubmit="event.preventDefault();doRegister()">
+      <div class="f"><label for="reg-name">Nombre completo</label><input autocomplete="name" id="reg-name" placeholder="Laura García" type="text" required/></div>
+      <div class="f"><label for="reg-email">Email</label><input autocomplete="email" id="reg-email" placeholder="tu@email.com" type="email" inputmode="email" autocapitalize="off" required/></div>
+      <div class="f"><label for="reg-pass">Contraseña</label><input autocomplete="new-password" id="reg-pass" placeholder="Mínimo 6 caracteres" type="password" minlength="6" required/></div>
+      <div id="reg-err" class="form-err" role="alert" style="display:none"></div>
+      <button class="btn bts btbl" type="submit">Crear cuenta</button>
+    </form>
+    <p class="footnote center">Tus datos se guardan en la nube y puedes usarlos desde cualquier dispositivo.</p>
+  </div>
 </div>
-<div style="display:flex;background:var(--ar);border-radius:999px;padding:.2rem;margin-bottom:1.5rem">
-<button id="auth-tab-login" onclick="authTab('login')" style="flex:1;padding:.52rem;border:none;border-radius:999px;font-family:inherit;font-size:.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;background:#fff;color:var(--vd);box-shadow:0 1px 4px rgba(0,0,0,.08);cursor:pointer">Entrar</button>
-<button id="auth-tab-register" onclick="authTab('register')" style="flex:1;padding:.52rem;border:none;border-radius:999px;font-family:inherit;font-size:.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;background:none;color:var(--gr);cursor:pointer">Registrarse</button>
-</div>
-<div id="auth-login-form">
-<div class="f"><label>Email</label><input autocomplete="email" id="login-email" placeholder="tu@email.com" type="email"/></div>
-<div class="f"><label>Contraseña</label><input autocomplete="current-password" id="login-pass" placeholder="••••••••" type="password"/></div>
-<div id="auth-err" style="font-size:.78rem;color:var(--ro);margin-bottom:.75rem;display:none"></div>
-<button class="btn bts btbl" onclick="doLogin()" style="margin-bottom:.65rem">Entrar →</button>
-</div>
-<div id="auth-register-form" style="display:none">
-<div class="f"><label>Nombre completo</label><input autocomplete="name" id="reg-name" placeholder="Laura García" type="text"/></div>
-<div class="f"><label>Email</label><input autocomplete="email" id="reg-email" placeholder="tu@email.com" type="email"/></div>
-<div class="f"><label>Contraseña</label><input autocomplete="new-password" id="reg-pass" placeholder="Mínimo 6 caracteres" type="password"/></div>
-<div id="reg-err" style="font-size:.78rem;color:var(--ro);margin-bottom:.75rem;display:none"></div>
-<button class="btn bts btbl" onclick="doRegister()" style="margin-bottom:.65rem">Crear cuenta →</button>
-</div>
-<p style="font-size:.72rem;color:var(--gr);text-align:center">Tus datos se guardan en la nube y son accesibles desde cualquier dispositivo.</p>
-</div>
-</div>
+
 <!-- STABLE SELECTOR SCREEN -->
-<div id="stable-screen" style="display:none;position:fixed;inset:0;z-index:490;background:var(--fo);overflow-y:auto">
-<div style="max-width:500px;margin:0 auto;padding:1.5rem 1rem 5rem">
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem">
-<div>
-<div style="font-family:'Cormorant Garamond',serif;font-size:1.5rem;font-weight:600;color:var(--ti)">Mis cuadras</div>
-<div id="stable-screen-user" style="font-size:.78rem;color:var(--gr)"></div>
+<div id="stable-screen" class="screen" style="display:none">
+  <div class="screen-inner">
+    <div class="screen-head">
+      <div>
+        <h1 class="screen-title">Mis cuadras</h1>
+        <div id="stable-screen-user" class="footnote"></div>
+      </div>
+      <button class="btn btg btsm" onclick="doLogout()">Cerrar sesión</button>
+    </div>
+    <div id="stable-list-screen"></div>
+    <div class="group-title">Unirse a una cuadra</div>
+    <form class="join-row" onsubmit="event.preventDefault();joinByCode()">
+      <label for="invite-code-input" class="sr-only">Código de invitación</label>
+      <input id="invite-code-input" placeholder="Código de invitación" autocapitalize="characters" autocomplete="off" spellcheck="false"/>
+      <button class="btn bts" type="submit" id="join-btn">Unirse</button>
+    </form>
+    <button class="btn btbl" style="margin-top:1rem" onclick="showCreateStable()">Crear nueva cuadra</button>
+  </div>
 </div>
-<button class="btn btg btsm" onclick="doLogout()">Salir</button>
+
+<!-- CREATE STABLE SHEET -->
+<div id="create-stable-modal" class="sheet-overlay" style="display:none" onclick="if(event.target===this)closeSheet('create-stable-modal')">
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="create-stable-title">
+    <div class="sheet-grabber" aria-hidden="true"></div>
+    <header class="sheet-bar">
+      <button class="sheet-btn" onclick="closeSheet('create-stable-modal')">Cancelar</button>
+      <h2 id="create-stable-title">Nueva cuadra</h2>
+      <button class="sheet-btn strong" onclick="doCreateStable()">Crear</button>
+    </header>
+    <div class="sheet-body">
+      <div class="group"><div class="row-field"><label for="new-stable-name">Nombre</label><input id="new-stable-name" placeholder="Cuadra El Pinar" autocomplete="off"/></div>
+      <div class="row-field"><label for="new-stable-desc">Descripción</label><input id="new-stable-desc" placeholder="Opcional" autocomplete="off"/></div></div>
+      <div id="create-stable-err" class="form-err" role="alert" style="display:none"></div>
+      <p class="group-foot">Serás el administrador. Después podrás invitar al equipo con un código.</p>
+    </div>
+  </section>
 </div>
-<div id="stable-list-screen"></div>
-<div style="margin-top:1rem;border-top:1px solid var(--li);padding-top:1rem">
-<p style="font-size:.8rem;color:var(--gr);margin-bottom:.75rem">¿Tienes un código de invitación?</p>
-<div style="display:flex;gap:.5rem">
-<input id="invite-code-input" placeholder="Código de invitación..." style="flex:1;font-family:inherit;font-size:.88rem;padding:.6rem .8rem;border:1px solid var(--li);border-radius:9px;background:#fff"/>
-<button class="btn bts" onclick="joinByCode()">Unirse</button>
+
+<!-- JOIN TEAM SELECTOR SHEET -->
+<div id="join-team-modal" class="sheet-overlay" style="display:none">
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="join-team-title">
+    <div class="sheet-grabber" aria-hidden="true"></div>
+    <header class="sheet-bar">
+      <button class="sheet-btn" onclick="closeJoinTeamModal()">Cancelar</button>
+      <h2>Invitación</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <h3 id="join-team-title" class="sheet-lead">¿Qué integrante del equipo eres?</h3>
+      <p id="join-team-sub" class="footnote" style="margin-bottom:1rem">Selecciona tu mote o perfil para vincular tu usuario.</p>
+      <div id="join-team-list"></div>
+    </div>
+  </section>
 </div>
-</div>
-<div style="margin-top:1rem">
-<button class="btn btbl" onclick="showCreateStable()" style="width:100%">+ Crear nueva cuadra</button>
-</div>
-</div>
-</div>
-<!-- CREATE STABLE MODAL -->
-<div id="create-stable-modal" onclick="if(event.target===this)this.style.display='none'" style="display:none;position:fixed;inset:0;z-index:510;background:rgba(44,41,37,.55);backdrop-filter:blur(3px)">
-<div style="position:absolute;bottom:0;left:0;right:0;background:var(--fo);border-radius:18px 18px 0 0;padding:1.5rem 1rem 2.5rem;max-width:500px;margin:0 auto">
-<h2 style="font-size:1.1rem;margin-bottom:1rem">Nueva cuadra</h2>
-<div class="f"><label>Nombre de la cuadra *</label><input id="new-stable-name" placeholder="Ej: Cuadra El Pinar"/></div>
-<div class="f"><label>Descripción (opcional)</label><input id="new-stable-desc" placeholder="Ej: Cuadra familiar en Sevilla"/></div>
-<div id="create-stable-err" style="font-size:.78rem;color:var(--ro);margin-bottom:.75rem;display:none"></div>
-<button class="btn bts btbl" onclick="doCreateStable()">Crear cuadra</button>
-</div>
-</div>
-<!-- JOIN TEAM SELECTOR MODAL -->
-<div id="join-team-modal" style="display:none;position:fixed;inset:0;z-index:520;background:rgba(44,41,37,.58);backdrop-filter:blur(3px);overflow-y:auto">
-<div style="max-width:520px;margin:0 auto;padding:1.5rem 1rem 4rem">
-<div style="background:var(--fo);border-radius:18px;padding:1.2rem;border:1px solid var(--li);margin-top:2rem">
-<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;margin-bottom:.85rem">
-<div>
-<div style="font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--v);font-weight:800">Invitación a cuadra</div>
-<h2 id="join-team-title" style="font-size:1.25rem;margin-top:.12rem">¿Qué integrante del equipo eres?</h2>
-<p id="join-team-sub" style="font-size:.82rem;color:var(--gr);margin-top:.25rem;line-height:1.45">Selecciona tu mote o perfil para vincular tu usuario.</p>
-</div>
-<button onclick="closeJoinTeamModal()" style="background:none;border:none;font-size:1.35rem;color:var(--gr);cursor:pointer">✕</button>
-</div>
-<div id="join-team-list"></div>
-<div style="margin-top:.8rem;border-top:1px solid var(--li);padding-top:.8rem">
-<button class="btn btg btbl" onclick="confirmJoinAs(null)">No estoy en la lista / unirme sin vincular</button>
-</div>
-</div>
-</div>
-</div>
+
 <!-- MAIN APP HEADER -->
 <header id="main-header" style="display:none"><div class="bar">
-<button class="logo" onclick="openStablePanel()" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:.4rem;text-align:left">
-    EquiLog <span class="ltag">Beta</span>
-<span id="active-stable-name" style="font-family:Mulish,sans-serif;font-size:.6rem;font-weight:700;color:var(--v);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid var(--v);border-radius:999px;padding:.08rem .4rem"></span>
-</button>
-<div style="display:flex;gap:.4rem;align-items:center">
-<span id="header-user-name" style="font-size:.68rem;color:var(--gr);font-weight:600"></span>
-<button class="ib" onclick="openUserPanel()" title="Mi perfil">👤</button>
-</div>
+  <button class="logo" onclick="openStablePanel()" aria-label="Cuadra activa. Cambiar o gestionar cuadra">
+    <span class="logo-word">EquiLog</span>
+    <span id="active-stable-name" class="stable-pill"></span>
+    <svg class="ico ico-sm" aria-hidden="true"><use href="#i-down"/></svg>
+  </button>
+  <button class="avatar-btn" onclick="openUserPanel()" aria-label="Mi perfil">
+    <span id="header-user-name" class="avatar-name"></span>
+    <span id="header-avatar" class="avatar-dot">·</span>
+  </button>
 </div></header>
-<!-- STABLE PANEL (slide-up) -->
-<div id="stable-panel" onclick="if(event.target===this)closeStablePanel()" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(44,41,37,.55);backdrop-filter:blur(3px)">
-<div style="position:absolute;bottom:0;left:0;right:0;background:var(--fo);border-radius:18px 18px 0 0;padding:1.2rem 1rem 2rem;max-height:85vh;overflow-y:auto">
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-<h2 style="font-size:1.1rem">🏠 Cuadras</h2>
-<button onclick="closeStablePanel()" style="background:none;border:none;font-size:1.3rem;color:var(--gr);cursor:pointer">✕</button>
+
+<!-- STABLE SHEET -->
+<div id="stable-panel" class="sheet-overlay" style="display:none" onclick="if(event.target===this)closeStablePanel()">
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="stable-panel-title">
+    <div class="sheet-grabber" aria-hidden="true"></div>
+    <header class="sheet-bar">
+      <span></span>
+      <h2 id="stable-panel-title">Cuadra</h2>
+      <button class="sheet-btn strong" onclick="closeStablePanel()">Listo</button>
+    </header>
+    <div class="sheet-body" id="stable-panel-list"></div>
+  </section>
 </div>
-<div id="stable-panel-list"></div>
-<div style="margin-top:.75rem;display:grid;gap:.4rem">
-<button class="btn btbl" onclick="closeStablePanel();showCreateStable()">+ Nueva cuadra</button>
-<button class="btn btg btbl" onclick="copyInviteCode()">📋 Copiar código de invitación</button>
+
+<!-- PROFILE SHEET -->
+<div id="user-panel" class="sheet-overlay" style="display:none" onclick="if(event.target===this)closeUserPanel()">
+  <section class="sheet sheet-large" role="dialog" aria-modal="true" aria-labelledby="user-panel-title">
+    <div class="sheet-grabber" aria-hidden="true"></div>
+    <header class="sheet-bar">
+      <button class="sheet-btn" onclick="closeUserPanel()">Cancelar</button>
+      <h2 id="user-panel-title">Mi perfil</h2>
+      <button class="sheet-btn strong" id="profile-save-btn" onclick="saveUserProfile()">Guardar</button>
+    </header>
+    <div class="sheet-body" id="user-panel-content"></div>
+  </section>
 </div>
-</div>
-</div>
-<!-- USER PANEL -->
-<div id="user-panel" onclick="if(event.target===this)closeUserPanel()" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(44,41,37,.55);backdrop-filter:blur(3px)">
-<div style="position:absolute;bottom:0;left:0;right:0;background:var(--fo);border-radius:18px 18px 0 0;padding:1.2rem 1rem 2rem">
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-<h2 style="font-size:1.1rem">👤 Mi perfil</h2>
-<button onclick="closeUserPanel()" style="background:none;border:none;font-size:1.3rem;color:var(--gr);cursor:pointer">✕</button>
-</div>
-<div id="user-panel-content"></div>
-</div>
-</div>
-<div class="wrap" id="app-wrap"><div id="app"></div></div>
-<button class="fab" id="fab" style="display:none">+</button>
+
+<div class="wrap" id="app-wrap"><main id="app"></main></div>
+<button class="fab" id="fab" style="display:none" aria-label="Añadir"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg></button>
+
 <nav class="bn" style="display:none" aria-label="Navegación principal">
-<button class="nb" id="nb-home"><span class="ni">▦</span>Pizarra</button>
-<button class="nb" id="nb-horses"><span class="ni">🐴</span>Caballos</button>
-<button class="nb" id="nb-day"><span class="ni">✓</span>Hoy</button>
-<button class="nb" id="nb-team"><span class="ni">👥</span>Equipo</button>
-<button class="nb" id="nb-more"><span class="ni">•••</span>Más</button>
+  <button class="nb" id="nb-home"><svg class="ni" aria-hidden="true"><use href="#i-home"/></svg><span>Inicio</span></button>
+  <button class="nb" id="nb-horses"><svg class="ni" aria-hidden="true"><use href="#i-horse"/></svg><span>Caballos</span></button>
+  <button class="nb" id="nb-day"><svg class="ni" aria-hidden="true"><use href="#i-check"/></svg><span>Hoy</span></button>
+  <button class="nb" id="nb-team"><svg class="ni" aria-hidden="true"><use href="#i-team"/></svg><span>Equipo</span></button>
+  <button class="nb" id="nb-more"><svg class="ni" aria-hidden="true"><use href="#i-more"/></svg><span>Más</span></button>
 </nav>
 
 <div id="more-panel" class="sheet-overlay" style="display:none" onclick="if(event.target===this)closeMorePanel()">
-  <section class="sheet" aria-label="Más opciones">
-    <div class="sheet-head"><div><span class="ey">EquiLog</span><h2>Más opciones</h2></div><button class="ib" onclick="closeMorePanel()" aria-label="Cerrar">✕</button></div>
-    <div id="more-panel-content" class="more-grid"></div>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="more-panel-title">
+    <div class="sheet-grabber" aria-hidden="true"></div>
+    <header class="sheet-bar">
+      <span></span>
+      <h2 id="more-panel-title">Más</h2>
+      <button class="sheet-btn strong" onclick="closeMorePanel()">Listo</button>
+    </header>
+    <div class="sheet-body"><div id="more-panel-content" class="group"></div></div>
   </section>
 </div>
-<div class="toast" id="toast"></div>
-<div id="loading-screen" style="display:none;position:fixed;inset:0;z-index:480;background:var(--fo);align-items:center;justify-content:center;flex-direction:column;gap:.75rem"><div class="sp"></div><div style="font-size:.82rem;color:var(--gr)">Cargando...</div></div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div id="loading-screen" style="display:none;position:fixed;inset:0;z-index:480;background:var(--fo);align-items:center;justify-content:center;flex-direction:column;gap:.75rem"><div class="sp"></div><div class="footnote">Cargando…</div></div>
 
 <script src="./legacy-app.js"></script>
-<script src="./pizarra.js"></script>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>
