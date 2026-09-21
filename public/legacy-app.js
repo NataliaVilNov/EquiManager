@@ -14,11 +14,116 @@ const EM=["👩","👨","👩‍🦱","👨‍🦱","👩‍🦰","👩‍🦳",
 // ─────────────────────────────────────────────
 function getFB(){ return window._FB; }
 
+// ─────────────────────────────────────────────
+// SHEETS — un único sistema para todas las hojas modales
+// (HIG sheets.md: grabber, deslizar para cerrar, Cancelar/Listo, una hoja a la vez)
+// ─────────────────────────────────────────────
+const _sheetStack=[];
+const _sheetGuards={};           // id -> función que devuelve true si se puede cerrar
+let _sheetLastFocus=null;
+
+function openSheet(id){
+  const ov=document.getElementById(id); if(!ov)return;
+  // Una sola hoja a la vez: cierra la anterior antes de abrir otra.
+  [..._sheetStack].forEach(other=>{ if(other!==id) closeSheet(other,{force:true}); });
+  if(!_sheetStack.includes(id)){ _sheetLastFocus=document.activeElement; _sheetStack.push(id); }
+  clearTimeout(ov._closeTimer);
+  ov.style.display='flex';
+  ov.classList.remove('is-closing');
+  document.body.classList.add('sheet-open');
+  syncViewportVars();
+  const sheet=ov.querySelector('.sheet');
+  if(sheet){ sheet.style.transform=''; bindSheetDrag(ov,sheet); }
+  const body=ov.querySelector('.sheet-body'); if(body) body.scrollTop=0;
+  requestAnimationFrame(()=>{ const t=ov.querySelector('.sheet-bar h2'); if(t){t.setAttribute('tabindex','-1');t.focus({preventScroll:true});} });
+}
+function closeSheet(id,opts={}){
+  const ov=document.getElementById(id); if(!ov||ov.style.display==='none')return false;
+  if(!opts.force && _sheetGuards[id] && !_sheetGuards[id]())return false;
+  const i=_sheetStack.indexOf(id); if(i>-1)_sheetStack.splice(i,1);
+  const done=()=>{ ov.style.display='none'; ov.classList.remove('is-closing'); const sh=ov.querySelector('.sheet'); if(sh)sh.style.transform=''; };
+  if(opts.force||window.matchMedia('(prefers-reduced-motion: reduce)').matches){ done(); }
+  else { ov.classList.add('is-closing'); clearTimeout(ov._closeTimer); ov._closeTimer=setTimeout(done,180); }
+  if(!_sheetStack.length){
+    document.body.classList.remove('sheet-open');
+    if(_sheetLastFocus&&_sheetLastFocus.focus&&document.contains(_sheetLastFocus)){ try{_sheetLastFocus.focus({preventScroll:true});}catch(_e){} }
+  }
+  return true;
+}
+function bindSheetDrag(ov,sheet){
+  if(sheet._dragBound)return; sheet._dragBound=true;
+  const body=sheet.querySelector('.sheet-body');
+  let y0=null, dy=0, fromBody=false;
+  const start=(e)=>{
+    if(window.matchMedia('(min-width: 700px)').matches)return;           // en tablet/escritorio es un diálogo centrado
+    const tgt=e.target;
+    if(tgt.closest('input,textarea,select,button,a,label'))return;
+    fromBody=!!tgt.closest('.sheet-body');
+    if(fromBody && body && body.scrollTop>0)return;                       // solo si el contenido está arriba del todo
+    y0=(e.touches?e.touches[0]:e).clientY; dy=0; sheet.style.transition='none';
+  };
+  const move=(e)=>{
+    if(y0===null)return;
+    dy=Math.max(0,(e.touches?e.touches[0]:e).clientY-y0);
+    if(fromBody && dy<6)return;
+    sheet.style.transform=`translateY(${dy}px)`;
+    if(e.cancelable && dy>6) e.preventDefault();
+  };
+  const end=()=>{
+    if(y0===null)return; y0=null; sheet.style.transition='';
+    const id=ov.id;
+    if(dy>Math.min(140,sheet.offsetHeight*.25)){
+      sheet.style.transform='';
+      if(id==='user-panel')closeUserPanel(); else if(id==='stable-panel')closeStablePanel(); else if(id==='more-panel')closeMorePanel(); else if(id==='join-team-modal')closeJoinTeamModal(); else closeSheet(id);
+    } else sheet.style.transform='';
+    dy=0;
+  };
+  sheet.addEventListener('touchstart',start,{passive:true});
+  sheet.addEventListener('touchmove',move,{passive:false});
+  sheet.addEventListener('touchend',end); sheet.addEventListener('touchcancel',end);
+}
+// Teclado virtual en iOS: la hoja se ajusta a la zona visible (visualViewport) para no quedar tapada.
+function syncViewportVars(){
+  const vv=window.visualViewport; const r=document.documentElement;
+  if(!vv){ r.style.setProperty('--vvh',window.innerHeight+'px'); return; }
+  r.style.setProperty('--vvh',vv.height+'px');
+  r.style.setProperty('--vvtop',vv.offsetTop+'px');
+  r.style.setProperty('--kb',Math.max(0,window.innerHeight-vv.height-vv.offsetTop)+'px');
+}
+if(window.visualViewport){ window.visualViewport.addEventListener('resize',syncViewportVars); window.visualViewport.addEventListener('scroll',syncViewportVars); }
+window.addEventListener('resize',syncViewportVars);
+document.addEventListener('focusin',(e)=>{
+  const el=e.target; if(!el||!el.closest)return;
+  if(el.matches('input,textarea,select') && el.closest('.sheet-body')){
+    setTimeout(()=>{ try{el.scrollIntoView({block:'center',behavior:'smooth'});}catch(_e){} },260);
+  }
+});
+document.addEventListener('keydown',(e)=>{
+  if(e.key!=='Escape'||!_sheetStack.length)return;
+  const id=_sheetStack[_sheetStack.length-1];
+  if(id==='user-panel')closeUserPanel(); else if(id==='stable-panel')closeStablePanel(); else if(id==='more-panel')closeMorePanel(); else if(id==='join-team-modal')closeJoinTeamModal(); else closeSheet(id);
+});
+
+function roleLabel(r){ return ({admin:'Administrador',owner:'Propietario',miembro:'Miembro',member:'Miembro'})[r]||(r?String(r).charAt(0).toUpperCase()+String(r).slice(1):'Miembro'); }
+function updateHeaderAvatar(){
+  const el=document.getElementById('header-avatar'); if(!el)return;
+  const user=window._FBUSER, profile=window._FBPROFILE||{};
+  const photo=profilePhoto(profile,user);
+  el.innerHTML=photo?`<img src="${photo}" alt="">`:esc(profileInitial(profile,user));
+  const nm=document.getElementById('header-user-name');
+  const first=((profile.name||(user&&user.displayName)||(user&&user.email)||'')+'').trim().split(/\s+/)[0];
+  if(nm) nm.textContent=first;
+}
+
 function authTab(tab){
   document.getElementById('auth-login-form').style.display = tab==='login'?'block':'none';
   document.getElementById('auth-register-form').style.display = tab==='register'?'block':'none';
-  document.getElementById('auth-tab-login').style.cssText = tab==='login'?'flex:1;padding:.52rem;border:none;border-radius:999px;font-family:inherit;font-size:.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;background:#fff;color:var(--vd);box-shadow:0 1px 4px rgba(0,0,0,.08);cursor:pointer':'flex:1;padding:.52rem;border:none;border-radius:999px;font-family:inherit;font-size:.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;background:none;color:var(--gr);cursor:pointer';
-  document.getElementById('auth-tab-register').style.cssText = tab==='register'?'flex:1;padding:.52rem;border:none;border-radius:999px;font-family:inherit;font-size:.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;background:#fff;color:var(--vd);box-shadow:0 1px 4px rgba(0,0,0,.08);cursor:pointer':'flex:1;padding:.52rem;border:none;border-radius:999px;font-family:inherit;font-size:.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;background:none;color:var(--gr);cursor:pointer';
+  [['login','auth-tab-login'],['register','auth-tab-register']].forEach(([k,id])=>{
+    const b=document.getElementById(id); if(!b)return;
+    b.classList.toggle('active',tab===k); b.setAttribute('aria-selected',tab===k?'true':'false');
+  });
+  const first=document.getElementById(tab==='login'?'login-email':'reg-name');
+  if(first&&window.matchMedia('(pointer:fine)').matches)first.focus();
 }
 
 async function doLogin(){
@@ -64,6 +169,7 @@ function fbErrMsg(code){
 // SCREEN MANAGEMENT
 // ─────────────────────────────────────────────
 function showScreen(id){
+  [..._sheetStack].forEach(sid=>closeSheet(sid,{force:true}));
   ['auth-screen','stable-screen'].forEach(s=>{
     const el=document.getElementById(s);
     if(el) el.style.display='none';
@@ -126,6 +232,9 @@ function profileInitial(profile,user){
   return String(n).trim().charAt(0).toUpperCase() || '?';
 }
 
+let _profileDirty=false;
+function markProfileDirty(){ _profileDirty=true; const n=document.getElementById('profile-name'); if(n&&n.value.trim())n.removeAttribute('aria-invalid'); const b=document.getElementById('profile-save-btn'); if(b)b.classList.add('pulse-once'); }
+
 function openUserPanel(){
   const panel=document.getElementById('user-panel');
   const content=document.getElementById('user-panel-content');
@@ -135,39 +244,50 @@ function openUserPanel(){
   const stable=window._ACTIVE_STABLE;
   const myRole=stable&&stable.members&&stable.members[user.uid]?stable.members[user.uid].role:'miembro';
   const photo=profilePhoto(profile,user);
+  const name=profile.name||user.displayName||'';
+  _profileDirty=false;
   content.innerHTML=`
-    <div style="display:flex;align-items:center;gap:.85rem;margin-bottom:1.2rem">
-      <div id="profile-photo-preview" style="width:62px;height:62px;border-radius:50%;background:var(--vl);display:flex;align-items:center;justify-content:center;font-size:1.55rem;font-weight:700;color:var(--vd);overflow:hidden;border:2px solid var(--li)">${photo?`<img src="${photo}" style="width:100%;height:100%;object-fit:cover">`:profileInitial(profile,user)}</div>
-      <div style="min-width:0;flex:1">
-        <div style="font-weight:700;font-size:1rem">${esc(profile.name||user.displayName||'')}</div>
-        <div style="font-size:.75rem;color:var(--gr);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(user.email)}</div>
-        <div style="font-size:.68rem;color:var(--v);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-top:.15rem">${myRole}</div>
+    <div class="profile-id">
+      <div id="profile-photo-preview" class="profile-avatar">${photo?`<img src="${photo}" alt="Tu foto de perfil">`:esc(profileInitial(profile,user))}</div>
+      <div class="profile-photo-actions">
+        <label class="link-btn" for="profile-photo-file">${photo?'Cambiar foto':'Añadir foto'}</label>
+        <input type="file" accept="image/*" id="profile-photo-file" onchange="previewUserProfilePhoto(event)">
+        ${photo?`<button type="button" class="link-btn danger" id="profile-photo-remove" onclick="removeUserProfilePhoto()">Quitar</button>`:''}
       </div>
+      <div class="profile-name">${esc(name)||'Sin nombre'}</div>
+      <div class="profile-email">${esc(user.email||'')}</div>
+      ${stable?`<span class="role-pill">${esc(roleLabel(myRole))} · ${esc(stable.name||'Cuadra')}</span>`:''}
     </div>
 
-    <div class="card" style="margin-bottom:.75rem">
-      <div style="font-size:.7rem;font-weight:700;color:var(--gr);text-transform:uppercase;letter-spacing:.07em;margin-bottom:.65rem">Editar mi perfil</div>
-      <div class="f"><label>Foto de perfil</label>
-        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
-          <label class="fl">Elegir foto<input type="file" accept="image/*" id="profile-photo-file" onchange="previewUserProfilePhoto(event)"></label>
-          ${photo?`<button type="button" class="btn btg btsm" onclick="removeUserProfilePhoto()">Quitar foto</button>`:''}
-        </div>
-        <div style="font-size:.68rem;color:var(--gr);margin-top:.35rem">La foto se reduce automáticamente para que pueda guardarse correctamente.</div>
-      </div>
-      <div class="f"><label>Nombre</label><input id="profile-name" value="${esc(profile.name||user.displayName||'')}" placeholder="Tu nombre"></div>
-      <div class="f"><label>Teléfono / contacto</label><input id="profile-phone" value="${esc(profile.phone||'')}" placeholder="Opcional"></div>
-      <div class="f"><label>Notas personales</label><textarea id="profile-bio" placeholder="Opcional">${esc(profile.bio||'')}</textarea></div>
-      <button class="btn bts btbl" onclick="saveUserProfile()">Guardar perfil</button>
+    <div class="group-title">Datos personales</div>
+    <div class="group">
+      <div class="row-field"><label for="profile-name">Nombre</label><input id="profile-name" value="${esc(name)}" placeholder="Tu nombre" autocomplete="name" oninput="markProfileDirty()"></div>
+      <div class="row-field"><label for="profile-phone">Teléfono</label><input id="profile-phone" type="tel" inputmode="tel" value="${esc(profile.phone||'')}" placeholder="Opcional" autocomplete="tel" oninput="markProfileDirty()"></div>
+      <div class="row-field stacked"><label for="profile-bio">Notas</label><textarea id="profile-bio" rows="3" placeholder="Opcional: alergias, horario, contacto de emergencia…" oninput="markProfileDirty()">${esc(profile.bio||'')}</textarea></div>
     </div>
+    <p class="group-foot">Tu nombre aparece en las tareas y en el equipo de la cuadra.</p>
 
-    <div class="card" style="margin-bottom:.75rem">
-      <div style="font-size:.7rem;font-weight:700;color:var(--gr);text-transform:uppercase;letter-spacing:.07em;margin-bottom:.5rem">Mi agenda de hoy</div>
-      ${renderMyDayTasks()}
+    <div class="group-title">Hoy</div>
+    ${renderMyDayTasks()}
+
+    ${stable?`<div class="group-title">Cuadra</div>
+    <div class="group">
+      <button class="row" onclick="closeUserPanel(true);openStablePanel()"><span class="row-label">${esc(stable.name||'Cuadra')}</span><span class="row-value">${esc(roleLabel(myRole))}</span><svg class="ico chev" aria-hidden="true"><use href="#i-chevron"/></svg></button>
+      <button class="row" onclick="closeUserPanel(true);window._fbShowStableSelector()"><span class="row-label">Cambiar de cuadra</span><svg class="ico chev" aria-hidden="true"><use href="#i-chevron"/></svg></button>
+    </div>`:''}
+
+    <div class="group" style="margin-top:1.6rem">
+      <button class="row row-danger" onclick="confirmLogout()"><span class="row-label">Cerrar sesión</span></button>
     </div>
-    <button class="btn btr btbl" onclick="doLogout();closeUserPanel()">Cerrar sesión</button>`;
-  panel.style.display='flex';
+    <p class="group-foot">Sesión iniciada como ${esc(user.email||'')}.</p>`;
+  _sheetGuards['user-panel']=()=>!_profileDirty||confirm('Tienes cambios sin guardar en tu perfil. ¿Descartarlos?');
+  openSheet('user-panel');
 }
-function closeUserPanel(){ document.getElementById('user-panel').style.display='none'; }
+function closeUserPanel(force){ if(closeSheet('user-panel',{force:!!force})) _profileDirty=false; }
+function confirmLogout(){
+  if(!confirm('¿Cerrar sesión en este dispositivo?'))return;
+  closeUserPanel(true); doLogout();
+}
 
 function resizeProfileImageFile(file, maxSize=160, quality=0.58){
   return new Promise((resolve,reject)=>{
@@ -216,8 +336,9 @@ async function previewUserProfilePhoto(event){
     const dataUrl=await resizeProfileImageFile(f,160,0.58);
     input.dataset.value=dataUrl;
     const prev=document.getElementById('profile-photo-preview');
-    if(prev)prev.innerHTML=`<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover">`;
-    toast('Foto lista para guardar');
+    if(prev)prev.innerHTML=`<img src="${dataUrl}" alt="Nueva foto de perfil">`;
+    markProfileDirty();
+    toast('Foto lista. Pulsa Guardar para aplicarla.');
   }catch(e){
     input.value='';
     input.dataset.value='';
@@ -230,11 +351,15 @@ function removeUserProfilePhoto(){
   const prev=document.getElementById('profile-photo-preview');
   const user=window._FBUSER, profile=window._FBPROFILE||{};
   if(prev)prev.textContent=profileInitial(profile,user);
+  const rm=document.getElementById('profile-photo-remove'); if(rm)rm.remove();
+  markProfileDirty();
 }
 async function saveUserProfile(){
   const fb=getFB();const user=window._FBUSER;if(!fb||!user)return;
   const name=gv('profile-name').trim();
-  if(!name){toast('El nombre es obligatorio');return;}
+  if(!name){toast('Escribe tu nombre para poder guardar el perfil');const n=document.getElementById('profile-name');if(n){n.focus();n.setAttribute('aria-invalid','true');}return;}
+  const saveBtn=document.getElementById('profile-save-btn');
+  if(saveBtn){saveBtn.disabled=true;saveBtn.textContent='Guardando…';}
   const phone=gv('profile-phone').trim();
   const bio=gv('profile-bio').trim();
   const input=document.getElementById('profile-photo-file');
@@ -290,39 +415,44 @@ async function saveUserProfile(){
       }
     }catch(_e){}
 
-    const header=document.getElementById('header-user-name');
-    if(header)header.textContent=name.split(' ')[0];
-    closeUserPanel();
-    V={name:'list'};
+    updateHeaderAvatar();
+    _profileDirty=false;
+    closeUserPanel(true);
     render();
-    toast('Perfil actualizado');
+    toast('Perfil guardado');
   }catch(e){
-    toast('Error al guardar perfil: '+e.message);
+    toast('No se pudo guardar el perfil. Comprueba la conexión e inténtalo de nuevo. ('+e.message+')');
+  }finally{
+    if(saveBtn){saveBtn.disabled=false;saveBtn.textContent='Guardar';}
   }
 }
 
 function renderMyDayTasks(){
   const user=window._FBUSER;if(!user)return'';
   const today=td();
-  // Tasks assigned to me (by uid or by matching name)
   const myProfile=window._FBPROFILE||{};
   const myName=(myProfile.name||'').toLowerCase();
-  const myMember=D.team.find(m=>m.uid===user.uid||(m.name||'').toLowerCase()===myName);
-  const myTasks=D.tasks.filter(t=>t.date===today&&(t.uid===user.uid||(myMember&&t.pid===myMember.id)));
-  if(!myTasks.length)return'<div style="font-size:.82rem;color:var(--gr)">Sin tareas asignadas hoy.</div>';
-  return myTasks.map(t=>{
-    const h=D.horses.find(x=>x.id===t.hid);
-    const a=af(t.activity||t.act||'monta');
-    const isDone=t.status==='done';
-    return`<div style="display:flex;align-items:center;gap:.6rem;padding:.42rem 0;border-bottom:1px solid var(--li)">
-      <span style="font-size:1rem">${a.i}</span>
-      <div style="flex:1;font-size:.82rem;${isDone?'text-decoration:line-through;color:var(--gr)':''}">
-        ${esc(a.l)}${h?' · '+esc(h.name):''}
-        <div style="font-size:.72rem;color:var(--gr)">${t.time||''} ${t.dur?t.dur+'min':''}</div>
-      </div>
-      <span style="font-size:.68rem;font-weight:700;color:${isDone?'var(--v)':'var(--am)'}">${isDone?'✓':'⏳'}</span>
-    </div>`;
-  }).join('');
+  const myMember=(D.team||[]).find(m=>m.uid===user.uid||(m.name||'').toLowerCase()===myName);
+  const myTasks=(D.tasks||[]).filter(t=>t.date===today&&(t.uid===user.uid||(myMember&&t.pid===myMember.id)))
+    .sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+  if(!myTasks.length)return'<div class="group"><div class="row static"><span class="row-label muted">No tienes tareas asignadas hoy.</span></div></div>';
+  const done=myTasks.filter(t=>t.status==='done').length;
+  const shown=myTasks.slice(0,5);
+  return `<div class="group">
+    <div class="row static"><span class="row-label"><b>${done} de ${myTasks.length}</b> completadas</span><span class="mini-progress" aria-hidden="true"><span style="width:${Math.round(done/myTasks.length*100)}%"></span></span></div>
+    ${shown.map(t=>{
+      const h=D.horses.find(x=>x.id===t.hid);
+      const a=af(t.activity||t.act||'monta');
+      const isDone=t.status==='done';
+      return`<div class="row static task-row ${isDone?'is-done':''}">
+        <span class="task-time">${esc(t.time||'—')}</span>
+        <span class="row-label">${esc(a.l)}${h?' · '+esc(h.name):''}${t.dur?`<small>${t.dur} min</small>`:''}</span>
+        <span class="status-dot ${isDone?'ok':'pending'}">${isDone?'Hecha':'Pendiente'}</span>
+      </div>`;
+    }).join('')}
+    ${myTasks.length>shown.length?`<button class="row" onclick="closeUserPanel(true);V={name:'day',dd:td()};render()"><span class="row-label link">Ver las ${myTasks.length} tareas</span><svg class="ico chev" aria-hidden="true"><use href="#i-chevron"/></svg></button>`:
+    `<button class="row" onclick="closeUserPanel(true);V={name:'day',dd:td()};render()"><span class="row-label link">Abrir el día</span><svg class="ico chev" aria-hidden="true"><use href="#i-chevron"/></svg></button>`}
+  </div>`;
 }
 
 // ─────────────────────────────────────────────
@@ -349,11 +479,11 @@ async function renderStableList(){
     listEl.innerHTML=stables.map(s=>{
       const myRole=s.members&&s.members[user.uid]?s.members[user.uid].role:'miembro';
       const count=s.memberIds?s.memberIds.length:1;
-      return`<button onclick="_fbSwitchStable('${s.id}')" style="width:100%;display:flex;align-items:center;gap:.75rem;background:#fff;border:1.5px solid var(--li);border-radius:13px;padding:.85rem;margin-bottom:.55rem;text-align:left;cursor:pointer;transition:.16s" onmouseover="this.style.borderColor='var(--v)'" onmouseout="this.style.borderColor='var(--li)'">
+      return`<button class="stable-card" onclick="_fbSwitchStable('${s.id}')">
         <div style="width:44px;height:44px;border-radius:10px;background:var(--vl);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">🏠</div>
         <div style="flex:1;min-width:0">
           <div style="font-weight:700;font-size:.95rem;color:var(--ti)">${esc(s.name)}</div>
-          <div style="font-size:.72rem;color:var(--gr);margin-top:.07rem">${count} miembro${count!==1?'s':''} · ${myRole}</div>
+          <div style="font-size:.72rem;color:var(--gr);margin-top:.07rem">${count} miembro${count!==1?'s':''} · ${roleLabel(myRole)}</div>
           ${s.description?`<div style="font-size:.72rem;color:var(--gr)">${esc(s.description)}</div>`:''}
         </div>
         <span style="color:var(--v);font-size:1.1rem">→</span>
@@ -410,10 +540,9 @@ window._fbSwitchStable = async function(stableId){
     // Update header
     const nameEl=document.getElementById('active-stable-name');
     if(nameEl)nameEl.textContent=window._ACTIVE_STABLE.name||'Cuadra';
-    const userNameEl=document.getElementById('header-user-name');
-    if(userNameEl)userNameEl.textContent=(user.displayName||user.email||'').split(' ')[0];
+    updateHeaderAvatar();
     showScreen('app');
-    V={name:'board',boardWeek:boardStartOfWeek(td())};render();
+    V={name:'home'};render();
   }catch(e){
     console.error('_fbSwitchStable:',e);
     try{await setDoc(doc(fb.db,'users',user.uid),{lastStable:null},{merge:true});}catch(_e){}
@@ -457,8 +586,8 @@ function _fbSetupListener(stableId){
 }
 
 function showCreateStable(){
-  document.getElementById('create-stable-modal').style.display='flex';
-  setTimeout(()=>document.getElementById('new-stable-name').focus(),100);
+  openSheet('create-stable-modal');
+  setTimeout(()=>document.getElementById('new-stable-name').focus(),200);
 }
 
 async function doCreateStable(){
@@ -486,7 +615,7 @@ async function doCreateStable(){
     });
     // Guardar en coleccion publica para busqueda por codigo sin query
     await setDoc(doc(fb.db,'inviteCodes',invCode),{stableId:stableRef.id,name,created:serverTimestamp()});
-    document.getElementById('create-stable-modal').style.display='none';
+    closeSheet('create-stable-modal',{force:true});
     await window._fbSwitchStable(stableRef.id);
   }catch(e){err.textContent='Error: '+e.message;err.style.display='block';}
 }
@@ -497,11 +626,11 @@ async function joinByCode(){
   const fb=getFB();
   const user=window._FBUSER;
   const input=document.getElementById('invite-code-input');
-  const btn=document.querySelector('[onclick="joinByCode()"]');
+  const btn=document.getElementById('join-btn');
   if(!fb||!user){toast('Inicia sesión primero');return;}
   const code=(input?input.value:'').trim().toUpperCase();
   if(!code){toast('Introduce un código de invitación');return;}
-  if(btn){btn.textContent='Buscando...';btn.disabled=true;}
+  if(btn){btn.textContent='Buscando…';btn.disabled=true;}
   const reset=()=>{if(btn){btn.textContent='Unirse';btn.disabled=false;}};
   try{
     const codeSnap=await fb.getDoc(fb.doc(fb.db,'inviteCodes',code));
@@ -584,11 +713,11 @@ function showJoinTeamModal(ctx){
     }).join('');
   }
   list.innerHTML += `<button class="btn btg btbl" style="margin-top:.75rem" onclick="confirmJoinAs(null)">Entrar sin vincular perfil</button>`;
-  modal.style.display='block';
+  openSheet('join-team-modal');
 }
 function closeJoinTeamModal(){
   const modal=document.getElementById('join-team-modal');
-  if(modal)modal.style.display='none';
+  if(modal)closeSheet('join-team-modal',{force:true});
   _pendingJoin=null;
 }
 
@@ -708,20 +837,29 @@ function openStablePanel(){
   const members=Object.entries(stable.members||{});
   const canManage=canManageStable(stable,user);
   list.innerHTML=`
-    <div style="background:var(--vl);border-radius:12px;padding:.85rem;margin-bottom:.75rem">
-      <div style="font-weight:700;font-size:.95rem;color:var(--vd)">${esc(stable.name)}</div>
-      ${stable.description?`<div style="font-size:.75rem;color:var(--gr);margin-top:.15rem">${esc(stable.description)}</div>`:''}
-      <div style="font-size:.72rem;color:var(--v);font-weight:700;margin-top:.35rem">${members.length} miembro${members.length!==1?'s':''}</div>
-      ${members.map(([uid,m])=>`<div style="font-size:.78rem;color:#5C544A;margin-top:.25rem">${uid===user.uid?'<b>':''}${esc(m.name||m.email||'')}${uid===user.uid?' (tú)':''} — ${m.role||'miembro'}${uid===user.uid?'</b>':''}</div>`).join('')}
+    <div class="stable-hero">
+      <div class="stable-hero-name">${esc(stable.name||'Cuadra')}</div>
+      ${stable.description?`<div class="footnote">${esc(stable.description)}</div>`:''}
     </div>
-    <button class="btn btbl btg" onclick="closeStablePanel();window._fbShowStableSelector()" style="margin-bottom:.4rem;width:100%">← Cambiar de cuadra</button>
-    ${canManage?`<button class="btn btr btbl" onclick="deleteStable()" style="margin-bottom:.4rem;width:100%">🗑️ Eliminar cuadra</button>`:`<button class="btn btr btbl" onclick="leaveStable()" style="margin-bottom:.4rem;width:100%">🚪 Abandonar cuadra</button>`}
-    <p style="font-size:.7rem;color:var(--gr);line-height:1.45;margin-top:.35rem">
-      ${canManage?'Eliminar borra la cuadra actual y sus datos principales.':'Abandonar te quitará el acceso y desvinculará tu usuario del integrante del equipo.'}
-    </p>`;
-  panel.style.display='flex';
+    <div class="group-title">${members.length} miembro${members.length!==1?'s':''}</div>
+    <div class="group">
+      ${members.map(([uid,m])=>`<div class="row static"><span class="row-label">${esc(m.name||m.email||'Sin nombre')}${uid===user.uid?'<span class="you-tag">Tú</span>':''}</span><span class="row-value">${esc(roleLabel(m.role))}</span></div>`).join('')}
+    </div>
+    <div class="group-title">Invitar</div>
+    <div class="group">
+      ${stable.inviteCode?`<button class="row" onclick="copyInviteCode()"><span class="row-label">Copiar código de invitación</span><span class="row-value mono">${esc(stable.inviteCode)}</span></button>`:''}
+    </div>
+    <div class="group" style="margin-top:1rem">
+      <button class="row" onclick="closeStablePanel();window._fbShowStableSelector()"><span class="row-label">Cambiar de cuadra</span><svg class="ico chev" aria-hidden="true"><use href="#i-chevron"/></svg></button>
+      <button class="row" onclick="closeStablePanel();showCreateStable()"><span class="row-label">Crear nueva cuadra</span><svg class="ico chev" aria-hidden="true"><use href="#i-chevron"/></svg></button>
+    </div>
+    <div class="group" style="margin-top:1.6rem">
+      ${canManage?`<button class="row row-danger" onclick="deleteStable()"><span class="row-label">Eliminar cuadra…</span></button>`:`<button class="row row-danger" onclick="leaveStable()"><span class="row-label">Abandonar cuadra…</span></button>`}
+    </div>
+    <p class="group-foot">${canManage?'Eliminar borra esta cuadra y sus datos principales para todo el equipo. No se puede deshacer.':'Abandonar te quitará el acceso y desvinculará tu usuario del integrante del equipo.'}</p>`;
+  openSheet('stable-panel');
 }
-function closeStablePanel(){ document.getElementById('stable-panel').style.display='none'; }
+function closeStablePanel(){ closeSheet('stable-panel'); }
 
 async function copyInviteCode(){
   const stable=window._ACTIVE_STABLE;
@@ -981,7 +1119,11 @@ function catFromHealthType(type){
 }
 function cap(s){return s?s.charAt(0).toUpperCase()+s.slice(1):s}
 function gv(id){const e=document.getElementById(id);return e?(e.value||""):""}
-function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2300)}
+let _toastTimer=null;
+function toast(m){const t=document.getElementById("toast");if(!t)return;t.textContent=m;t.classList.add("show");clearTimeout(_toastTimer);
+  // Tiempo proporcional a la longitud del mensaje (HIG accessibility.md › Cognitive: evitar auto-cierres demasiado rápidos)
+  const ms=Math.min(9000,Math.max(2600,String(m||'').length*70));
+  _toastTimer=setTimeout(()=>t.classList.remove("show"),ms);}
 
 function load(){
   // Returns current in-memory D (Firebase loads async separately)
@@ -1004,16 +1146,9 @@ function cleanForFirestore(value){
   return value;
 }
 
-// Estado de guardado: lo consume el indicador de la pizarra (Guardado / Guardando… / Sin conexión).
-function setSaveStatus(state){
-  window._EQ_SAVE_STATUS=state;
-  try{document.dispatchEvent(new CustomEvent('equilog-save-status',{detail:state}));}catch(e){}
-}
-
 function save(){
   // Debounce saves to Firestore (250ms)
   if(_saveTimeout)clearTimeout(_saveTimeout);
-  setSaveStatus('saving');
   _saveTimeout=setTimeout(async()=>{
     const fb=getFB();const sid=window._ACTIVE_STABLE_ID;
     const cleanD=cleanForFirestore(D);
@@ -1021,16 +1156,12 @@ function save(){
     if(!fb||!sid){
       // Fallback to localStorage if Firebase not ready
       try{localStorage.setItem(SK,JSON.stringify(cleanD));}catch(e){}
-      setSaveStatus('offline');
       return;
     }
     try{
       const {doc,setDoc}=fb;
       await setDoc(doc(fb.db,'stables',sid,'data','main'),cleanD);
-      setSaveStatus('saved');
     }catch(e){
-      // Nunca fingimos que está guardado: el indicador queda en error.
-      setSaveStatus('error');
       toast('Error al guardar: '+e.message);
       // Fallback
       try{localStorage.setItem(SK,JSON.stringify(cleanD));}catch(e2){}
@@ -1483,25 +1614,18 @@ function openMorePanel(){
   const content=document.getElementById('more-panel-content');
   if(!panel||!content)return;
   const items=[];
-  items.push({icon:'▦',title:'Pizarra semanal',sub:'Volver a la pantalla principal',go:"V={name:'board',boardWeek:V.boardWeek||boardStartOfWeek(td())};render()"});
-  items.push({icon:'＋',title:'Registro rápido',sub:'Salud, gasto o recordatorio',go:"pzOpenQuick('health')"});
-  items.push({icon:'🐴',title:'Caballos',sub:'Fichas, orden y estado',go:'pzOpenHorses()'});
-  items.push({icon:'✓',title:'Tareas de hoy',sub:'Agenda diaria del equipo',go:"V={name:'day',dd:td()};render()"});
-  items.push({icon:'🔔',title:'Alertas',sub:'Avisos y recordatorios',go:"V={name:'alerts'};render()"});
-  items.push({icon:'⌂',title:'Resumen de la cuadra',sub:'Inicio clásico con el estado del día',go:"V={name:'home'};render()"});
-  if(canPerm('team'))items.push({icon:'👥',title:'Equipo',sub:'Personas, permisos y calendario',go:"V={name:'team'};render()"});
-  items.push({icon:'▦',title:'Caminador y paddocks',sub:'Pizarras de instalaciones',go:"V={name:'boards',tab:'walker',boardDate:td()};render()"});
-  if(canPerm('stable'))items.push({icon:'🏠',title:'Cuadra',sub:'Tareas y gastos generales',go:"V={name:'cuadra',tab:'tareas'};render()"});
-  if(canPerm('stats'))items.push({icon:'▥',title:'Estadísticas',sub:'Actividad y finanzas',go:"V={name:'stats'};render()"});
-  items.push({icon:'⚙',title:'Configurar la pizarra',sub:'Botones de personas y actividades',go:'pzOpenTools()'});
-  items.push({icon:'👤',title:'Mi perfil',sub:'Datos personales y sesión',go:'openUserPanel()'});
-  items.push({icon:'⇄',title:'Cambiar de cuadra',sub:'Abrir otra cuadra',go:'openStablePanel()'});
-  content.innerHTML=items.map(i=>`<button class="more-item" onclick="closeMorePanel();${i.go}"><span>${i.icon}</span><div><b>${i.title}</b><small>${i.sub}</small></div><i>→</i></button>`).join('');
-  panel.style.display='flex';
+  items.push({icon:'board',title:'Pizarras',sub:'Plan semanal, caminador y paddocks',go:"V={name:'boards',tab:'weekly',boardWeek:boardStartOfWeek(td())};render()"});
+  if(canPerm('stable'))items.push({icon:'barn',title:'Cuadra',sub:'Tareas y gastos generales',go:"V={name:'cuadra',tab:'tareas'};render()"});
+  items.push({icon:'bell',title:'Alertas',sub:'Avisos y recordatorios',go:"V={name:'alerts'};render()"});
+  if(canPerm('stats'))items.push({icon:'chart',title:'Estadísticas',sub:'Actividad y finanzas',go:"V={name:'stats'};render()"});
+  items.push({icon:'person',title:'Mi perfil',sub:'Datos personales y sesión',go:'openUserPanel()'});
+  items.push({icon:'swap',title:'Cambiar de cuadra',sub:'Abrir otra cuadra',go:'openStablePanel()'});
+  content.innerHTML=items.map(i=>`<button class="row row-rich" onclick="closeMorePanel();${i.go}"><span class="row-icon" aria-hidden="true"><svg class="ico"><use href="#i-${i.icon}"/></svg></span><span class="row-label">${i.title}<small>${i.sub}</small></span><svg class="ico chev" aria-hidden="true"><use href="#i-chevron"/></svg></button>`).join('');
+  openSheet('more-panel');
   document.getElementById('nb-more')?.classList.add('active');
 }
 function closeMorePanel(){
-  const panel=document.getElementById('more-panel');if(panel)panel.style.display='none';
+  closeSheet('more-panel');
   document.getElementById('nb-more')?.classList.remove('active');
 }
 
@@ -1512,21 +1636,6 @@ function render(){
   const fab=document.getElementById("fab");
   fab.style.display="none";fab.onclick=null;
   let nm=V.name;
-
-  // ---- PIZARRA SEMANAL: pantalla principal de EquiLog ----
-  // Ocupa todo el viewport, sin navegación inferior ni FAB.
-  const isBoard=(nm==='board'&&typeof window.rBoard==='function');
-  document.body.classList.toggle('pz-mode',isBoard);
-  const nav=document.querySelector('nav.bn');
-  if(nav)nav.style.display=isBoard?'none':'flex';
-  if(isBoard){
-    document.getElementById("nb-home")?.classList.add("active");
-    try{ app.innerHTML=window.rBoard(); }
-    catch(err){ app.innerHTML=`<div class="em"><p style="color:var(--ro)">Error en la pizarra: ${esc(err.message)}</p></div>`; console.error(err); }
-    if(typeof window.pzMounted==='function')window.pzMounted();
-    return;
-  }
-
   if((['team','addMember','editMember','teamReport','templates','editTemplate'].includes(nm) && !canPerm('team')) ||
      (['cuadra','newCT','newCE'].includes(nm) && !canPerm('stable')) ||
      (nm==='stats' && !canPerm('stats')) ||
@@ -1542,6 +1651,8 @@ function render(){
   document.getElementById("nb-horses")?.classList.toggle("active",["list","addHorse","editHorse","horse","newTraining","newHealth","newExpense","expenseSettlement","report"].includes(nm));
   document.getElementById("nb-day")?.classList.toggle("active",["day","newTask","editTask","smartOrder"].includes(nm));
   document.getElementById("nb-team")?.classList.toggle("active",["team","addMember","editMember","memberDay","teamReport","templates","editTemplate","teamCalendar"].includes(nm));
+  document.querySelectorAll('.bn .nb').forEach(b=>{ if(b.classList.contains('active'))b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current'); });
+  if(window._lastViewName!==nm){ if(window._lastViewName&&window.scrollY>0)window.scrollTo({top:0}); window._lastViewName=nm; }
   try{
     const views={
       home:rHome, boards:rBoards, boardCell:rBoardCell, list:rList, addHorse:()=>rHF(null), editHorse:()=>rHF(D.horses.find(h=>h.id===V.hid)),
@@ -1598,7 +1709,7 @@ function rList(){
         </div>
         <div style="text-align:right;flex-shrink:0">
           <div style="font-family:'Cormorant Garamond',serif;font-size:1.1rem;font-weight:700;color:var(--v)">${cnt}</div>
-          <div style="font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gr)">Sesiones</div>
+          <div style="font-size:.72rem;color:var(--gr)">Sesiones</div>
         </div>
       </button>`;
     });
@@ -1718,7 +1829,7 @@ function rHorse(id){
         ${(h.sire||h.dam)?`<div class="ml2" style="margin-top:.3rem"><b>Padre:</b> ${esc(h.sire||"—")} &nbsp;·&nbsp; <b>Madre:</b> ${esc(h.dam||"—")}</div>`:""}
         ${(h.gsire||h.gdam)?`<div class="ml2"><b>Ab. pat.:</b> ${esc(h.gsire||"—")} &nbsp;·&nbsp; ${esc(h.gdam||"—")}</div>`:""}
         ${(h.mgsire||h.mgdam)?`<div class="ml2"><b>Ab. mat.:</b> ${esc(h.mgsire||"—")} &nbsp;·&nbsp; ${esc(h.mgdam||"—")}</div>`:""}
-        ${h.horsetelex?`<div style="margin-top:.4rem"><a href="${esc(h.horsetelex)}" target="_blank" rel="noopener" class="btn btsm" style="font-size:.62rem">🔗 Ver en Horsetelex</a></div>`:""}
+        ${h.horsetelex?`<div style="margin-top:.4rem"><a href="${esc(h.horsetelex)}" target="_blank" rel="noopener" class="btn btsm">Ver en Horsetelex</a></div>`:""}
       </div>
     </div>
     <div class="tabs">
@@ -2594,7 +2705,7 @@ function rStats(){
           <div class="xinf"><div class="xl">${esc(h.name)}</div><div class="xm">${ht.length} sesiones · ${(mH/60).toFixed(1)}h</div></div>
           <div style="text-align:right;flex-shrink:0">
             <div style="font-family:'Cormorant Garamond',serif;font-size:1.1rem;font-weight:700;color:var(--vd)">${avgRH}</div>
-            <div style="font-size:.6rem;color:var(--gr)">Val. media</div>
+            <div style="font-size:.72rem;color:var(--gr)">Val. media</div>
           </div>
         </div>`;
       });
@@ -3323,7 +3434,7 @@ function rTeam(){
       return`<div class="mc" style="cursor:default">
         <div class="av" onclick="V={name:'memberDay',mid:'${m.id}',dd:'${td()}'};render()" style="cursor:pointer">${m.photo?`<img src="${m.photo}" alt="">`:(m.emoji||"👤")}</div>
         <div style="flex:1;min-width:0;cursor:pointer" onclick="V={name:'memberDay',mid:'${m.id}',dd:'${td()}'};render()"><div style="font-weight:700;font-size:.93rem">${esc(m.name)}</div><div style="font-size:.76rem;color:var(--gr)">${esc(m.role||"")}</div>${linked?`<span class="ap ok">🔗 Usuario vinculado</span>`:`<span class="ap">Sin usuario</span>`}</div>
-        <div style="text-align:right;flex-shrink:0"><div style="font-family:'Cormorant Garamond',serif;font-size:1.1rem;font-weight:700;color:var(--az)">${dn}/${mt.length}</div><div style="font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;color:var(--gr);margin-bottom:.25rem">Hoy</div><div style="display:flex;gap:.25rem;justify-content:flex-end"><button class="btn btsm btg" onclick="createMemberInvite('${m.id}')">Invitar</button><button class="btn btsm" onclick="V={name:'editMember',mid:'${m.id}'};render()">Editar</button></div></div>
+        <div style="text-align:right;flex-shrink:0"><div style="font-family:'Cormorant Garamond',serif;font-size:1.1rem;font-weight:700;color:var(--az)">${dn}/${mt.length}</div><div style="font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--gr);margin-bottom:.25rem">Hoy</div><div style="display:flex;gap:.25rem;justify-content:flex-end"><button class="btn btsm btg" onclick="createMemberInvite('${m.id}')">Invitar</button><button class="btn btsm" onclick="V={name:'editMember',mid:'${m.id}'};render()">Editar</button></div></div>
       </div>`;
     }).join("")}
   </div>`;
@@ -3764,7 +3875,7 @@ function attach(){
 }
 
 /* === BOTTOM NAV + INIT === */
-document.getElementById('nb-home').onclick=()=>{V={name:'board',boardWeek:V.boardWeek||boardStartOfWeek(td())};render()};
+document.getElementById('nb-home').onclick=()=>{V={name:'home'};render()};
 document.getElementById('nb-horses').onclick=()=>{V={name:'list'};render()};
 document.getElementById('nb-day').onclick=()=>{V={name:'day',dd:td()};render()};
 document.getElementById('nb-team').onclick=()=>{V={name:'team'};render()};
