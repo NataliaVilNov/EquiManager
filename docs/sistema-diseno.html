@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<title>EquiLog · Sistema de diseño</title>
+<meta name="theme-color" content="#FAF7F1" media="(prefers-color-scheme: light)"/>
+<meta name="theme-color" content="#161814" media="(prefers-color-scheme: dark)"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link href="https://fonts.gstatic.com" rel="preconnect" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&amp;family=Mulish:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../src/styles.css"/>
+<style>
+  body{padding-bottom:3rem}
+  .ds-head{padding:2.5rem 0 1rem}
+  .ds-head h1{font-size:2.4rem}
+  .ds-lead{color:var(--text-muted);max-width:60ch;margin-top:.6rem}
+  .ds-sec{margin:2.5rem 0 1rem;padding-top:1.5rem;border-top:1px solid var(--border)}
+  .ds-sec h2{font-size:1.5rem}
+  .ds-sec p{color:var(--text-muted);font-size:var(--fs-sm);margin-top:.25rem;max-width:62ch}
+  .swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.6rem;margin-top:1rem}
+  .sw-chip{border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;background:var(--surface-raised)}
+  .sw-chip i{display:block;height:54px}
+  .sw-chip b{display:block;font-size:var(--fs-sm);padding:.45rem .55rem 0}
+  .sw-chip small{display:block;font-size:var(--fs-micro);color:var(--text-muted);padding:0 .55rem .5rem;font-variant-numeric:tabular-nums}
+  .type-row{display:flex;align-items:baseline;gap:1rem;padding:.5rem 0;border-bottom:1px solid var(--divider);flex-wrap:wrap}
+  .type-row code{font-size:var(--fs-micro);color:var(--text-muted);min-width:9rem;font-family:ui-monospace,monospace}
+  .demo{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin-top:1rem}
+  .note{background:var(--accent-soft);border:1px solid var(--accent-border);border-radius:var(--radius-sm);padding:.85rem 1rem;font-size:var(--fs-sm);margin-top:1rem}
+  .note b{color:var(--accent-strong)}
+  @media (prefers-color-scheme:dark){.note b{color:var(--accent)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="ds-head">
+    <span class="ey">EquiLog</span>
+    <h1>Sistema de diseño</h1>
+    <p class="ds-lead">
+      EquiLog es el cuaderno de cuadra. Se abre a las seis de la mañana, en el guadarnés,
+      con el móvil y las manos frías. De ahí vienen el papel, el verde oliva y la cifra en
+      serif: el número escrito a mano en el libro de registro.
+    </p>
+    <div class="note">
+      <b>Elemento distintivo: la cifra.</b> Cormorant Garamond sostiene todas las cantidades
+      de la aplicación — importes, recuentos, días, el número del día en el calendario.
+      Todo lo demás calla. Esta página cambia sola con el modo claro/oscuro del sistema.
+    </div>
+  </div>
+
+  <!-- ----------------------------------------------------------- Color -->
+  <div class="ds-sec">
+    <h2>Color</h2>
+    <p>Tokens semánticos: cada uno se define por su papel, no por su aspecto, y tiene variante
+       clara y oscura. Ninguna pareja texto/fondo baja de 4,5:1.</p>
+  </div>
+  <div class="swatches">
+    <div class="sw-chip"><i style="background:var(--surface)"></i><b>surface</b><small>fondo base</small></div>
+    <div class="sw-chip"><i style="background:var(--surface-raised)"></i><b>surface-raised</b><small>tarjeta</small></div>
+    <div class="sw-chip"><i style="background:var(--surface-inset)"></i><b>surface-inset</b><small>pestañas, bloques</small></div>
+    <div class="sw-chip"><i style="background:var(--accent)"></i><b>accent</b><small>7,73:1 sobre base</small></div>
+    <div class="sw-chip"><i style="background:var(--text)"></i><b>text</b><small>13,54:1</small></div>
+    <div class="sw-chip"><i style="background:var(--text-muted)"></i><b>text-muted</b><small>5,55:1</small></div>
+    <div class="sw-chip"><i style="background:var(--ok)"></i><b>ok</b><small>correcto</small></div>
+    <div class="sw-chip"><i style="background:var(--warn)"></i><b>warn</b><small>pendiente</small></div>
+    <div class="sw-chip"><i style="background:var(--danger)"></i><b>danger</b><small>conflicto</small></div>
+    <div class="sw-chip"><i style="background:var(--info)"></i><b>info</b><small>información</small></div>
+  </div>
+
+  <!-- ------------------------------------------------------ Tipografía -->
+  <div class="ds-sec">
+    <h2>Tipografía</h2>
+    <p>Suelo absoluto de 11 px y base de 16 px, según las HIG. Antes la navegación bajaba a
+       8,1 px y las notas de pizarra a 6,75 px. La versalita espaciada queda reservada a un
+       único papel: el antetítulo de sección.</p>
+  </div>
+  <div style="margin-top:1rem">
+    <div class="type-row"><code>--fs-2xl · 28px</code><span style="font-family:'Cormorant Garamond',serif;font-size:var(--fs-2xl);font-weight:600">Pizarra semanal</span></div>
+    <div class="type-row"><code>--fs-xl · 22px</code><span style="font-family:'Cormorant Garamond',serif;font-size:var(--fs-xl);font-weight:600">Caballos de la cuadra</span></div>
+    <div class="type-row"><code>--fs-lg · 18px</code><span style="font-size:var(--fs-lg)">Herraje pendiente</span></div>
+    <div class="type-row"><code>--fs-md · 16px (base)</code><span style="font-size:var(--fs-md)">Texto corriente de la interfaz</span></div>
+    <div class="type-row"><code>--fs-base · 14px</code><span style="font-size:var(--fs-base)">Etiquetas y texto secundario</span></div>
+    <div class="type-row"><code>--fs-sm · 13px</code><span style="font-size:var(--fs-sm);color:var(--text-muted)">Apoyo, pies y ayudas</span></div>
+    <div class="type-row"><code>--fs-micro · 11px</code><span style="font-size:var(--fs-micro);color:var(--text-muted)">Distintivos y notas de celda — suelo absoluto</span></div>
+    <div class="type-row"><code>.ey · antetítulo</code><span class="ey">Actividad de hoy</span></div>
+  </div>
+
+  <!-- ---------------------------------------------------------- Cifras -->
+  <div class="ds-sec">
+    <h2>La cifra</h2>
+    <p>El elemento distintivo. Serif, con cifras tabulares para que las columnas de importes
+       cuadren verticalmente.</p>
+  </div>
+  <div class="sg sg3" style="margin-top:1rem">
+    <div class="st"><div class="v">14</div><div class="l">Caballos</div></div>
+    <div class="st az"><div class="v">1.240 €</div><div class="l">Gastos del mes</div></div>
+    <div class="st red"><div class="v">3</div><div class="l">Vencidos</div></div>
+  </div>
+
+  <!-- --------------------------------------------------------- Botones -->
+  <div class="ds-sec">
+    <h2>Botones y objetivos táctiles</h2>
+    <p>44 × 44 px por defecto, 32 px para controles secundarios. Antes los botones de icono
+       median 33 px y el círculo de estado 25 px, por debajo del mínimo de las HIG.</p>
+  </div>
+  <div class="demo">
+    <button class="btn bts">Guardar cambios</button>
+    <button class="btn">Cancelar</button>
+    <button class="btn btg">Secundario</button>
+    <button class="btn btr">Eliminar</button>
+    <button class="btn btsm">Pequeño</button>
+    <button class="btn bts" disabled>Guardando…</button>
+    <button class="ib" aria-label="Volver"><span aria-hidden="true">←</span></button>
+    <button class="ib" aria-label="Editar"><span aria-hidden="true">✏️</span></button>
+  </div>
+  <div class="note">Pulsa el tabulador: todos los controles muestran ahora un anillo de foco.
+    Antes solo lo tenía un elemento en toda la aplicación.</div>
+
+  <!-- ------------------------------------------------------- Formulario -->
+  <div class="ds-sec">
+    <h2>Formularios</h2>
+    <p>Toda etiqueta va asociada a su campo, los errores se anuncian y los campos miden 44 px
+       de alto.</p>
+  </div>
+  <div class="card" style="margin-top:1rem">
+    <div class="f">
+      <label for="ds-concept">Concepto</label>
+      <input id="ds-concept" type="text" placeholder="Herraje completo"/>
+    </div>
+    <div class="r2">
+      <div class="f">
+        <label for="ds-amount">Importe</label>
+        <input id="ds-amount" type="number" inputmode="decimal" step="0.01" value="95.00"/>
+      </div>
+      <div class="f">
+        <label for="ds-date">Fecha</label>
+        <input id="ds-date" type="date" value="2026-10-07"/>
+      </div>
+    </div>
+    <div class="f">
+      <label for="ds-bad">Reparto</label>
+      <input id="ds-bad" type="text" value="99" aria-invalid="true" aria-describedby="ds-bad-err"/>
+      <span class="field-error" id="ds-bad-err">El reparto debe sumar 100 %. Ahora suma 99 %.</span>
+    </div>
+    <div class="og og3">
+      <button type="button" class="oo active" aria-pressed="true"><span class="ic" aria-hidden="true">🔨</span>Herraje</button>
+      <button type="button" class="oo" aria-pressed="false"><span class="ic" aria-hidden="true">💉</span>Vacuna</button>
+      <button type="button" class="oo" aria-pressed="false"><span class="ic" aria-hidden="true">🦷</span>Dientes</button>
+    </div>
+  </div>
+
+  <!-- ---------------------------------------------------------- Estados -->
+  <div class="ds-sec">
+    <h2>Estados</h2>
+    <p>Verde correcto · ámbar pendiente · rojo conflicto · azul información. El color nunca va
+       solo: siempre lo acompaña texto o forma, porque hay quien no distingue rojo de verde.</p>
+  </div>
+  <div class="demo">
+    <span class="sb s-pagado">Pagado</span>
+    <span class="sb s-pendiente">Pendiente</span>
+    <span class="sb s-parcial">Parcial</span>
+    <span class="ap ok">✓ Al día</span>
+    <span class="ap">🔔 En 12 d</span>
+    <span class="ap ov">⚠ Vencido hace 3 d</span>
+  </div>
+  <div class="board-legend" style="margin-top:1rem">
+    <span class="ok">Correcto</span><span class="warn">Pendiente</span>
+    <span class="bad">Conflicto</span><span class="info">Información</span>
+  </div>
+
+  <!-- ----------------------------------------------------------- Fichas -->
+  <div class="ds-sec">
+    <h2>Fichas y listas</h2>
+  </div>
+  <div style="margin-top:1rem">
+    <button class="hc">
+      <span class="hp" aria-hidden="true">🐴</span>
+      <span style="flex:1;min-width:0">
+        <span style="display:block;font-weight:700">Fandango</span>
+        <span class="ml2">PRE · 8 años · Box 4</span>
+        <span class="ap ov">⚠ Herraje vencido hace 3 d</span>
+      </span>
+    </button>
+    <div class="tkc">
+      <button class="ck done" aria-label="Marcar como pendiente" aria-pressed="true">✓</button>
+      <div class="tkb">
+        <div class="tkt">Paddock mañana</div>
+        <div class="tkm">Fandango · 09:00</div>
+        <span class="tka">👤 Marta</span>
+      </div>
+      <button class="db" aria-label="Eliminar tarea"><span aria-hidden="true">✕</span></button>
+    </div>
+    <div class="xc">
+      <span class="xi herraje" aria-hidden="true">🔨</span>
+      <div class="xinf">
+        <div class="xl">Herraje completo</div>
+        <div class="xm">7 oct 2026 · Fandango</div>
+      </div>
+      <div class="ca"><span class="sb s-pendiente">Pendiente</span><b style="font-variant-numeric:tabular-nums">95,00 €</b></div>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------------ Avisos -->
+  <div class="ds-sec">
+    <h2>Avisos y vacíos</h2>
+    <p>Un error dice qué ha pasado y cómo arreglarlo. Una pantalla vacía invita a la acción
+       siguiente en vez de limitarse a decir que no hay nada.</p>
+  </div>
+  <div style="margin-top:1rem">
+    <div class="sal">
+      <span class="ico" aria-hidden="true">💬</span>
+      <span class="txt">Sesión de hoy sin valorar<span>Fandango · salto · 45 min</span></span>
+    </div>
+    <div class="board-help info">
+      <b>Arrastra un caballo a un hueco</b>
+      <span>En el móvil también puedes tocar el caballo y después el hueco.</span>
+    </div>
+    <div class="empty-soft">
+      <span aria-hidden="true">✓</span>
+      <div><b>Todo hecho por hoy</b><p>No queda ninguna tarea pendiente en la cuadra.</p></div>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------------ Carga -->
+  <div class="ds-sec">
+    <h2>Carga</h2>
+    <p>Aparece algo de inmediato y se anuncia al lector de pantalla. Con movimiento reducido el
+       giro se detiene.</p>
+  </div>
+  <div class="ld" role="status"><div class="sp" aria-hidden="true"></div><span>Cargando…</span></div>
+
+  <div class="ds-sec">
+    <h2>Comprobación</h2>
+    <p>Esta página se ha verificado con axe-core (WCAG 2.1 AA) en modo claro y oscuro, a 402 px
+       de ancho, sin incidencias. Cambia el modo de tu sistema para ver la otra variante.</p>
+  </div>
+
+</div>
+</body>
+</html>
