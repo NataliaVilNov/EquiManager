@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="EquiLog">
+  <title>EquiLog</title>
+  <!-- Icono: herradura sobre pergamino encerado.
+       Formas rellenas y solapadas, sin texto y sin réplica de interfaz, como
+       piden las HIG para iconos de aplicación. Legible a 44 px: una sola
+       silueta, contorno limpio y contenido centrado con margen. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#55634B"/>
+      <stop offset="1" stop-color="#3A452F"/>
+    </linearGradient>
+    <linearGradient id="shoe" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FDFBF5"/>
+      <stop offset="1" stop-color="#E7DFCD"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#bg)"/>
+
+  <!-- Brillo superior, para que el icono no se lea plano -->
+  <rect width="512" height="256" fill="#FFFFFF" opacity=".06"/>
+
+  <g transform="translate(256 268) scale(0.72)">
+    <!-- Herradura: arco exterior y hueco interior, con las ramas abiertas abajo -->
+    <path fill="url(#shoe)" d="
+      M0-154
+      c-63 0-114 51-114 114
+      v62
+      c0 14-5 24-14 33
+      l-6 6
+      a34 34 0 0 0 48 48
+      l6-6
+      c22-22 32-49 32-81
+      v-62
+      a48 48 0 0 1 96 0
+      v62
+      c0 32 10 59 32 81
+      l6 6
+      a34 34 0 0 0 48-48
+      l-6-6
+      c-9-9-14-19-14-33
+      v-62
+      c0-63-51-114-114-114
+      z"/>
+    <!-- Clavos: siete, como una herradura real -->
+    <g fill="#55634B">
+      <circle cx="-78" cy="-36" r="11"/>
+      <circle cx="-86" cy="26" r="11"/>
+      <circle cx="-74" cy="86" r="11"/>
+      <circle cx="78" cy="-36" r="11"/>
+      <circle cx="86" cy="26" r="11"/>
+      <circle cx="74" cy="86" r="11"/>
+      <circle cx="0" cy="-104" r="11"/>
+    </g>
+  </g>
+</svg>
