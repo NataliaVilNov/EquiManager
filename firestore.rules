@@ -1,0 +1,572 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function stableDoc(stableId) {
+      return get(/databases/$(database)/documents/stables/$(stableId));
+    }
+
+    function isStableMember(stableId) {
+      return signedIn()
+        && request.auth.uid in stableDoc(stableId).data.memberIds;
+    }
+
+    function isOwner() {
+      return signedIn()
+        && resource.data.ownerId == request.auth.uid;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && request.auth.uid in resource.data.memberIds
+        && resource.data.members[request.auth.uid].role == "admin";
+    }
+
+    function isOwnerOrAdmin() {
+      return isOwner() || isAdmin();
+    }
+
+    // --- Entrada a una cuadra por código de invitación (self-service join) -------------
+    // Antes esta función solo comprobaba ownerId/inviteCode/name y que memberIds creciera
+    // en 1: NO acotaba el mapa `members`, así que cualquier usuario autenticado podía
+    // añadirse a CUALQUIER cuadra con `members.{miUid}.role = "admin"` y quedarse con el
+    // control total (incluido el borrado). Ahora se acota TODO el diff del documento:
+    //   * solo pueden cambiar `memberIds` y `members`,
+    //   * `memberIds` debe ser exactamente el conjunto anterior MÁS el uid del llamante,
+    //   * el diff de `members` debe afectar EXACTAMENTE a la clave del llamante,
+    //   * y el rol del nuevo miembro debe ser "miembro" (nunca "admin").
+    //
+    // LIMITACIÓN CONOCIDA: las reglas no pueden verificar que el usuario haya teclado el
+    // código de invitación correcto (no hay forma de leer el input del cliente). Lo que sí
+    // hacemos es convertir el código en un secreto real: /inviteCodes ya no se puede
+    // listar ni borrar por cualquiera (ver A3/A4 más abajo), y /stables ya no se puede
+    // listar ni leer si no eres miembro, así que un atacante no puede descubrir ni el id
+    // de la cuadra ni el código. Aun así, quien CONOZCA un stableId puede autoañadirse
+    // como "miembro". La solución duradera es mover el join a una Cloud Function que
+    // valide el código con el Admin SDK y escriba el miembro, y dejar aquí
+    // `allow update: if false` para este caso.
+    function isJoiningSelf() {
+      return signedIn()
+        // No puede "entrar" quien ya es miembro (ni reescribir su propia ficha por aquí).
+        && !(request.auth.uid in resource.data.memberIds)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds', 'members'])
+        && request.auth.uid in request.resource.data.memberIds
+        // memberIds nuevo == memberIds viejo + el llamante, y nada más:
+        && request.resource.data.memberIds.toSet()
+             .hasOnly(resource.data.memberIds.concat([request.auth.uid]))
+        && request.resource.data.memberIds.toSet().hasAll(resource.data.memberIds)
+        && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
+        // el diff de `members` afecta EXACTAMENTE a la clave del llamante:
+        && request.resource.data.members.diff(resource.data.members).affectedKeys()
+             .hasOnly([request.auth.uid])
+        && request.resource.data.members.diff(resource.data.members).affectedKeys()
+             .hasAll([request.auth.uid])
+        && request.resource.data.members[request.auth.uid].role == "miembro";
+    }
+
+    // --- Salida de una cuadra (leaveStable) -------------------------------------------
+    // Antes solo se comprobaba el TAMAÑO de memberIds, de modo que quien se marchaba podía
+    // reescribir el censo entero en el mismo update: echar al administrador real e instalar
+    // un admin títere. Ahora el diff está acotado igual que en isJoiningSelf: memberIds ha
+    // de ser el conjunto anterior MENOS el llamante, el diff de `members` ha de afectar
+    // exactamente a su propia clave, y no puede cambiar ningún otro campo. El propietario
+    // nunca puede "abandonar" (debe eliminar la cuadra).
+    function isLeavingSelf() {
+      return signedIn()
+        && request.auth.uid in resource.data.memberIds
+        && resource.data.ownerId != request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds', 'members'])
+        && !(request.auth.uid in request.resource.data.memberIds)
+        // memberIds nuevo == memberIds viejo - el llamante, y nada más:
+        && request.resource.data.memberIds.toSet().hasOnly(resource.data.memberIds)
+        && resource.data.memberIds.toSet()
+             .hasOnly(request.resource.data.memberIds.concat([request.auth.uid]))
+        && request.resource.data.memberIds.size() == resource.data.memberIds.size() - 1
+        // el diff de `members` afecta EXACTAMENTE a la clave del llamante:
+        && request.resource.data.members.diff(resource.data.members).affectedKeys()
+             .hasOnly([request.auth.uid])
+        && request.resource.data.members.diff(resource.data.members).affectedKeys()
+             .hasAll([request.auth.uid]);
+    }
+
+    // Stable-scoped variants of isOwner()/isAdmin(), for use anywhere `resource` is NOT the
+    // stable doc itself (i.e. everywhere below except `match /stables/{stableId}`'s own
+    // create/update/delete rules) — isOwner()/isAdmin() read `resource.data.ownerId`/
+    // `.memberIds`/`.members`, which is only correct when `resource` IS the stable doc.
+    function isStableAdmin(stableId) {
+      return signedIn()
+        && request.auth.uid in stableDoc(stableId).data.memberIds
+        && stableDoc(stableId).data.members[request.auth.uid].role == "admin";
+    }
+
+    function isStableOwner(stableId) {
+      return signedIn() && stableDoc(stableId).data.ownerId == request.auth.uid;
+    }
+
+    function isStableOwnerOrAdmin(stableId) {
+      return isStableOwner(stableId) || isStableAdmin(stableId);
+    }
+
+    // Per-member fine-grained permissions live on stables/{stableId}/team/{memberId}.permissions
+    // (11 boolean keys, mirroring PERMISSION_KEYS in src/lib/permissions.js). A team doc is only
+    // recognized as "mine" here when its own document ID equals the caller's auth uid — the
+    // client additionally matches a doc via uid/userId/authUid fields (usePermissions.js), which
+    // rules can't replicate (get() only resolves an exact path, not a field search). Existing
+    // team docs (random uid()-generated IDs) won't match until backfilled to use the caller's
+    // uid as the doc ID; until then, those members fall through to defaultPermFor()'s defaults
+    // instead of their configured permissions — a fail-closed gap, not a fail-open one.
+    function myTeamDocPath(stableId) {
+      return /databases/$(database)/documents/stables/$(stableId)/team/$(request.auth.uid);
+    }
+
+    function hasTeamDoc(stableId) {
+      return exists(myTeamDocPath(stableId));
+    }
+
+    function myTeamPerms(stableId) {
+      return get(myTeamDocPath(stableId)).data.permissions;
+    }
+
+    // Mirrors defaultTeamPermissions() in src/lib/permissions.js — keep both in sync.
+    function defaultPermFor(key) {
+      return key in ['horses', 'trainings', 'tasks', 'expenses', 'health'];
+    }
+
+    function myPerm(stableId, key) {
+      return isStableMember(stableId) && (
+        isStableOwnerOrAdmin(stableId)
+        || (hasTeamDoc(stableId) && myTeamPerms(stableId)[key] == true)
+        || (!hasTeamDoc(stableId) && defaultPermFor(key))
+      );
+    }
+
+    // A horse's allowedUids field restricts its own profile fields and its expenses
+    // subcollection to specific team members, on top of the ordinary myPerm checks above.
+    // Absent/null means legacy/unrestricted (every horse predating this feature) — only an
+    // explicit array actually narrows access, and admins always bypass it.
+    function horseDoc(stableId, hid) {
+      return get(/databases/$(database)/documents/stables/$(stableId)/horses/$(hid));
+    }
+
+    function isHorseRelated(stableId, hid) {
+      let allowed = horseDoc(stableId, hid).data.allowedUids;
+      return isStableAdmin(stableId) || allowed == null || request.auth.uid in allowed;
+    }
+
+    // Lets a non-admin self-link an UNLINKED team doc to their own account — the join-by-code
+    // flow (StableSelectionContext.linkUserToTeamMember) writes uid/userId/authUid onto a
+    // team doc an admin already created, as the newly-joined (non-admin) user themselves, so
+    // the plain admin-only team write rule below would otherwise block the entire self-service
+    // join flow. Scoped narrowly so it can't be used to re-open the privilege-escalation gap
+    // that admin-only rule closes.
+    //
+    // CORRECCIÓN (A7): antes no se exigía que el documento de equipo fuese EL DEL LLAMANTE,
+    // así que cualquier miembro podía reclamar cualquier ficha de equipo sin vincular —
+    // incluida una creada de antemano con permisos elevados — y el cliente (usePermissions)
+    // la honra porque busca por los campos uid/userId/authUid. Ahora se exige
+    // `memberId == request.auth.uid` (el ID del documento ES el uid) y además se congela
+    // todo lo demás con affectedKeys().hasOnly([...]): por esta vía solo pueden tocarse los
+    // campos de vinculación, nunca `permissions` ni `role`.
+    //
+    // CONSECUENCIA PARA EL CLIENTE: las fichas de equipo con ID aleatorio (uid()) ya no se
+    // pueden autovincular. El cliente debe crear/migrar la ficha de equipo del miembro con
+    // su propio auth uid como ID del documento (o hacer la vinculación desde una Cloud
+    // Function / como admin). Es un fallo cerrado, no abierto.
+    function isSelfLinking(stableId, memberId) {
+      return isStableMember(stableId)
+        && memberId == request.auth.uid
+        && resource.data.uid == null && resource.data.userId == null && resource.data.authUid == null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.authUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'uid', 'userId', 'authUid', 'email', 'linkedName', 'linkedAt', 'linkedEmail'
+           ]);
+    }
+
+    // --- Códigos de invitación --------------------------------------------------------
+    // El ID del documento ES el secreto, así que `get` sigue abierto a cualquier usuario
+    // autenticado (hay que poder canjear un código que te han dado) pero `list` está
+    // prohibido: antes se podía volcar la colección entera y obtener TODOS los códigos del
+    // sistema. El borrado ya no es libre: antes cualquiera podía destruir las invitaciones
+    // pendientes de otra cuadra y, acto seguido, ocupar el mismo código apuntando a la suya.
+    //
+    // DEPENDENCIA DE ORDEN (deleteStable): el borrado exige poder leer la cuadra referida
+    // para comprobar que eres su propietario/administrador, de modo que el código debe
+    // borrarse ANTES que el documento de la cuadra. Si se borrase después, stableDoc() ya
+    // no existiría y la regla denegaría el borrado, dejando el código huérfano.
+    match /inviteCodes/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+
+      allow create: if signedIn()
+        && request.resource.data.stableId is string
+        && isStableOwnerOrAdmin(request.resource.data.stableId);
+
+      allow delete: if signedIn()
+        && resource.data.stableId is string
+        && isStableOwnerOrAdmin(resource.data.stableId);
+
+      allow update: if false;
+    }
+
+    match /stables/{stableId} {
+      // --- Lectura de cuadras ---------------------------------------------------------
+      // Antes era `allow read: if signedIn()`, lo que filtraba TODA la base de datos:
+      // nombre, inviteCode, memberIds y el mapa `members` completo (nombre + email + rol de
+      // cada usuario del producto). Ahora `get` exige ser miembro y `list` se demuestra con
+      // el propio filtro de la consulta (refreshStables usa array-contains sobre memberIds).
+      allow get: if isStableMember(stableId);
+      allow list: if signedIn() && request.auth.uid in resource.data.memberIds;
+
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.auth.uid in request.resource.data.memberIds;
+
+      // --- Escritura sobre el documento de la cuadra ----------------------------------
+      // isOwnerOrAdmin() permitía antes un update SIN restricciones, de modo que cualquier
+      // administrador podía apoderarse de la cuadra (`ownerId: miUid`), degradar al
+      // propietario real o eliminarla. Ahora, en la rama de owner/admin:
+      //   * `ownerId` queda fijado a su valor actual,
+      //   * un administrador que no sea el propietario no puede tocar la entrada del
+      //     propietario en `members` (ni su rol) ni sacarlo de `memberIds`.
+      //
+      // AVISO PARA EL CLIENTE (joinByCode): con la nueva regla de lectura, quien todavía NO
+      // es miembro NO puede hacer getDoc() del documento de la cuadra. El cliente debe
+      // dejar de leer stables/{stableId} antes de entrar: ha de pasar directamente al
+      // updateDoc de entrada (isJoiningSelf) usando solo los datos de inviteCodes/{code}
+      // (que ya trae stableId y name), y leer la cuadra DESPUÉS de haberse añadido. Lo
+      // mismo aplica a la subcolección `team`: solo se puede listar siendo ya miembro.
+      allow update: if signedIn() && (
+        (isOwnerOrAdmin()
+          && request.resource.data.ownerId == resource.data.ownerId
+          && (isOwner() || (
+                !request.resource.data.members.diff(resource.data.members).affectedKeys()
+                   .hasAny([resource.data.ownerId])
+                && resource.data.ownerId in request.resource.data.memberIds
+             ))
+        )
+        || isJoiningSelf()
+        || isLeavingSelf()
+      );
+
+      // Solo el propietario puede eliminar la cuadra. Un administrador ya no puede
+      // destruirla (ver AVISO: el cliente debe restringir también su UI de borrado al
+      // propietario, porque deleteStableCascade() correría antes y dejaría la cuadra a
+      // medio vaciar si luego el borrado del documento se deniega).
+      allow delete: if isOwner();
+
+      // Collections gated by the caller's own permission-key matrix (myPerm). Firestore rules
+      // are OR-across-every-matching-block, so a wildcard "everything else" rule cannot coexist
+      // with these as a looser fallback for the SAME collections — each collection under this
+      // stable gets its own explicit block instead (docs/DATABASE.md §4 has the full writeup).
+      match /horses/{hid} {
+        // Read is deliberately NOT restricted by allowedUids — every stable member keeps
+        // reading every horse doc (name, etc.), since boards/tasks/lists depend on that and
+        // Firestore can't restrict individual fields within one document. The restriction on
+        // a horse's profile fields is a client-side UI gate only (docs/components/horses.md);
+        // allowedUids here only ever gates writes.
+        allow read: if isStableMember(stableId);
+
+        allow create: if myPerm(stableId, 'horses')
+          && (isStableAdmin(stableId)
+              || request.resource.data.allowedUids == null
+              || request.resource.data.allowedUids == [request.auth.uid]);
+
+        allow update: if myPerm(stableId, 'horses')
+          && (request.resource.data.sale == resource.data.sale || myPerm(stableId, 'sale'))
+          && (isStableAdmin(stableId)
+              || resource.data.allowedUids == null
+              || request.auth.uid in resource.data.allowedUids)
+          && (request.resource.data.allowedUids == resource.data.allowedUids || isStableAdmin(stableId));
+
+        allow delete: if myPerm(stableId, 'deleteItems');
+
+        // --- Subcolecciones por caballo, ligadas a la RUTA REAL (A9) ------------------
+        // Los bloques de collection-group del final del fichero solo autorizan por los
+        // CAMPOS stableId/hid del propio documento, nunca por su ruta: con ellos un miembro
+        // de la cuadra A podía escribir documentos físicamente colgados de la cuadra B, y
+        // saltarse la restricción por caballo poniendo `hid` de un caballo permitido
+        // mientras escribía bajo otro que no lo estaba. Por eso aquellos bloques son ahora
+        // de SOLO LECTURA (para que las consultas collectionGroup sigan funcionando) y la
+        // escritura vive aquí, donde stableId y hid vienen de la ruta y se obliga a que los
+        // campos coincidan con ella.
+        match /trainings/{trainingId} {
+          allow read: if isStableMember(stableId) && isHorseRelated(stableId, hid);
+          allow create: if myPerm(stableId, 'trainings')
+            && isHorseRelated(stableId, hid)
+            && request.resource.data.stableId == stableId
+            && request.resource.data.hid == hid;
+          allow update: if myPerm(stableId, 'trainings')
+            && isHorseRelated(stableId, hid)
+            && request.resource.data.stableId == stableId
+            && request.resource.data.stableId == resource.data.stableId
+            && request.resource.data.hid == hid;
+          allow delete: if myPerm(stableId, 'deleteItems') && isHorseRelated(stableId, hid);
+        }
+
+        match /health/{healthId} {
+          allow read: if isStableMember(stableId) && isHorseRelated(stableId, hid);
+          allow create: if myPerm(stableId, 'health')
+            && isHorseRelated(stableId, hid)
+            && request.resource.data.stableId == stableId
+            && request.resource.data.hid == hid;
+          allow update: if myPerm(stableId, 'health')
+            && isHorseRelated(stableId, hid)
+            && request.resource.data.stableId == stableId
+            && request.resource.data.stableId == resource.data.stableId
+            && request.resource.data.hid == hid;
+          allow delete: if myPerm(stableId, 'deleteItems') && isHorseRelated(stableId, hid);
+        }
+
+        match /healthDocs/{healthDocId} {
+          allow read: if isStableMember(stableId) && isHorseRelated(stableId, hid);
+          allow create: if myPerm(stableId, 'health')
+            && isHorseRelated(stableId, hid)
+            && request.resource.data.stableId == stableId
+            && request.resource.data.hid == hid;
+          allow update: if myPerm(stableId, 'health')
+            && isHorseRelated(stableId, hid)
+            && request.resource.data.stableId == stableId
+            && request.resource.data.stableId == resource.data.stableId
+            && request.resource.data.hid == hid;
+          allow delete: if myPerm(stableId, 'deleteItems') && isHorseRelated(stableId, hid);
+        }
+
+        // Direct per-horse expense reads, used by the non-admin per-horse listeners in
+        // StableDataContext.jsx (see the collectionGroup expenses block below for why
+        // non-admins can't use the single stable-wide collectionGroup listener). Uses the
+        // real path-bound stableId/hid here rather than resource.data fields, so there's no
+        // ambiguity about whether Firestore can prove this against the listener's query the
+        // way there is for the collectionGroup case.
+        match /expenses/{expenseId} {
+          allow read: if isStableMember(stableId) && isHorseRelated(stableId, hid);
+          allow create: if myPerm(stableId, 'expenses')
+            && isHorseRelated(stableId, hid)
+            && request.resource.data.stableId == stableId
+            && request.resource.data.hid == hid;
+          allow update: if myPerm(stableId, 'expenses')
+            && isHorseRelated(stableId, hid)
+            && request.resource.data.stableId == stableId
+            && request.resource.data.stableId == resource.data.stableId
+            && request.resource.data.hid == hid;
+          // Deliberately gated by 'expenses' alone, not 'deleteItems': 'expenses' is
+          // default-true for new team members, so also requiring deleteItems (default-false)
+          // would silently revoke a capability existing non-admin members already have
+          // today. Matches current client behavior exactly (see docs/BACKLOG.md).
+          allow delete: if myPerm(stableId, 'expenses') && isHorseRelated(stableId, hid);
+        }
+      }
+
+      match /tasks/{tid} {
+        allow read: if isStableMember(stableId);
+        allow create, update: if myPerm(stableId, 'tasks');
+        allow delete: if myPerm(stableId, 'deleteItems');
+
+        // Excepciones dispersas por fecha de una tarea recurrente. Ligadas a la ruta real
+        // (A9) y con stableId fijado (A8): antes la regla de update miraba
+        // `request.resource.data.stableId` en vez de `resource.data.stableId`, así que un
+        // miembro de la cuadra A podía reetiquetar una ocurrencia existente de la cuadra B
+        // y borrar en silencio su estado done/assignee (los escritos usan setDoc merge, que
+        // las reglas tratan como update).
+        match /occurrences/{date} {
+          allow read: if isStableMember(stableId);
+          allow create: if myPerm(stableId, 'tasks')
+            && request.resource.data.stableId == stableId
+            && request.resource.data.taskId == tid;
+          allow update: if myPerm(stableId, 'tasks')
+            && request.resource.data.stableId == stableId
+            && request.resource.data.stableId == resource.data.stableId
+            && request.resource.data.taskId == tid;
+          allow delete: if myPerm(stableId, 'deleteItems');
+        }
+      }
+
+      // Non-admin team-doc writes are blocked entirely (not just privileged fields): today the
+      // client lets ANY member with team:true edit ANY teammate's doc, including .permissions
+      // and .role — a privilege-escalation path. Restricting all writes to owner/admin closes it
+      // without depending on the doc-ID-equals-uid convention above (which most existing team
+      // docs don't satisfy yet). The one deliberate carve-out is isSelfLinking (above), needed
+      // for the join-by-code flow to work for non-admins at all.
+      match /team/{memberId} {
+        allow read: if isStableMember(stableId);
+        allow create, delete: if isStableOwnerOrAdmin(stableId);
+        allow update: if isStableOwnerOrAdmin(stableId) || isSelfLinking(stableId, memberId);
+      }
+
+      match /taskTemplates/{tid} {
+        allow read: if isStableMember(stableId);
+        allow create, update: if myPerm(stableId, 'team');
+        allow delete: if myPerm(stableId, 'team') && myPerm(stableId, 'deleteItems');
+      }
+
+      match /stableExpenses/{eid} {
+        allow read: if isStableMember(stableId);
+        allow create, update: if myPerm(stableId, 'stable');
+        allow delete: if myPerm(stableId, 'stable') && myPerm(stableId, 'deleteItems');
+      }
+
+      // --- Pizarras y planificación (A10) ----------------------------------------------
+      // Antes todas estas colecciones eran `allow read, write: if isStableMember(stableId)`,
+      // y `write` incluye delete: cualquier miembro, incluso con deleteItems=false, podía
+      // borrar boardConfig/main de un solo escrito y destruir todas las columnas, los
+      // caminadores y los paddocks definidos. Ahora los verbos van separados y cada
+      // colección cuelga de la clave de permiso más cercana.
+      //
+      // boardConfig es la DEFINICIÓN de las pizarras (estructura de la cuadra), de ahí la
+      // clave 'stable'; su borrado exige además 'deleteItems' porque en el uso normal nadie
+      // borra este documento (solo el cascade de eliminación de la cuadra, que corre como
+      // propietario/administrador).
+      // AVISO PARA EL CLIENTE: la pestaña "Configurar" de BoardsPage no está protegida por
+      // ningún permiso; debería ocultarse tras can('stable') para no mostrar una pantalla
+      // que ahora fallará al guardar para un miembro con stable=false.
+      match /boardConfig/{docId} {
+        allow read: if isStableMember(stableId);
+        allow create, update: if myPerm(stableId, 'stable');
+        allow delete: if myPerm(stableId, 'stable') && myPerm(stableId, 'deleteItems');
+      }
+
+      // Los avisos de sesión se crean Y se borran durante el ciclo normal de estado de una
+      // tarea (cycleTaskStatus/cycleOccurrenceStatus borran el aviso al completarla), así que
+      // el borrado se queda en 'tasks' a propósito: exigir 'deleteItems' (default-false)
+      // rompería una operación que los miembros ya hacen hoy. Mismo criterio que el delete
+      // de expenses.
+      match /sessionAlerts/{id} {
+        allow read: if isStableMember(stableId);
+        allow create, update: if myPerm(stableId, 'tasks');
+        allow delete: if myPerm(stableId, 'tasks');
+      }
+
+      // Asignaciones de caminador/paddock: quitar una asignación es parte del uso diario de
+      // la pizarra (y el borrado en lote al eliminar un hueco), por eso el delete se gatilla
+      // con 'tasks' y no con 'deleteItems'.
+      match /boardAssignments/{id} {
+        allow read: if isStableMember(stableId);
+        allow create, update: if myPerm(stableId, 'tasks');
+        allow delete: if myPerm(stableId, 'tasks');
+      }
+
+      // Celdas de la pizarra semanal (actividades por caballo y día): vaciar una celda es
+      // uso diario, de nuevo sin 'deleteItems'.
+      match /weeklyPlans/{id} {
+        allow read: if isStableMember(stableId);
+        allow create, update: if myPerm(stableId, 'trainings');
+        allow delete: if myPerm(stableId, 'trainings');
+      }
+
+      // Notion export. integrations/notion holds only NON-secret ids (database/data-source id,
+      // the page it lives under) — the Notion token never goes to Firestore — and is written
+      // by an admin when they connect Notion. notionLinks/{key} remembers which Notion page
+      // each health record / board cell was sent to, so re-sending updates instead of
+      // duplicating; any member with the health permission may sync, hence membership-only.
+      match /integrations/{docId} {
+        allow read: if isStableMember(stableId);
+        allow write: if isStableOwnerOrAdmin(stableId);
+      }
+
+      match /notionLinks/{key} {
+        allow read, write: if myPerm(stableId, 'health');
+      }
+
+      // Columnas periódicas (herraje, desparasitación, dientes...): marcar/desmarcar una
+      // fecha crea o borra el documento, así que el delete acompaña a la clave de la
+      // funcionalidad ('health', que es la que gobierna el calendario sanitario periódico).
+      match /periodicBoardDates/{id} {
+        allow read: if isStableMember(stableId);
+        allow create, update: if myPerm(stableId, 'health');
+        allow delete: if myPerm(stableId, 'health');
+      }
+
+      // Descansos/ausencias del equipo: se alternan con un toque (crear/borrar) desde el
+      // calendario de equipo, que ya está tras el permiso 'team'.
+      match /absences/{id} {
+        allow read: if isStableMember(stableId);
+        allow create, update: if myPerm(stableId, 'team');
+        allow delete: if myPerm(stableId, 'team');
+      }
+
+      // Liquidaciones de gastos: se crean desde ExpenseSettlementPage (permiso 'expenses')
+      // y en el uso normal no se borran, de ahí que el borrado exija además 'deleteItems'.
+      match /expenseSettlements/{id} {
+        allow read: if isStableMember(stableId);
+        allow create, update: if myPerm(stableId, 'expenses');
+        allow delete: if myPerm(stableId, 'expenses') && myPerm(stableId, 'deleteItems');
+      }
+    }
+
+    // --- Bloques de collection-group: SOLO LECTURA (A9) ---------------------------------
+    // Estos bloques existen únicamente para que las consultas collectionGroup() del cliente
+    // (y de deleteStableCascade) se puedan autorizar: una consulta de grupo no puede filtrar
+    // por ruta de ancestro, solo por campos, y cada documento lleva un `stableId` explícito
+    // justo para eso. Pero la autorización por campos NO prueba nada sobre dónde está
+    // físicamente el documento, así que aquí no se concede ninguna escritura: las escrituras
+    // (incluido el borrado) las gobiernan los bloques ligados a la ruta real, más arriba.
+    // El borrado en cascada sigue funcionando porque batchDeleteQuery borra por d.ref, que
+    // resuelve a la ruta real stables/{sid}/horses/{hid}/<col>/{id}.
+
+    // --- A5: la restricción por caballo (allowedUids) se ignoraba aquí -------------------
+    // trainings, health y healthDocs solo comprobaban isStableMember, de modo que un mozo
+    // restringido a dos caballos podía lanzar collectionGroup("health") y leer el historial
+    // veterinario de TODOS los caballos, diagnósticos incluidos, y la `url` de todos los
+    // documentos sanitarios subidos (enlaces de descarga de Firebase Storage de larga vida).
+    // Ahora replican exactamente el patrón de expenses: el administrador es su propia rama
+    // OR (depende solo de resource.data.stableId, el campo por el que filtra la consulta),
+    // de modo que su único listener global sigue funcionando.
+    //
+    // AVISO PARA EL CLIENTE: igual que ya pasaba con expenses, un NO administrador no puede
+    // satisfacer estas reglas con una consulta collectionGroup filtrada solo por stableId
+    // (isHorseRelated depende de resource.data.hid, que la consulta no filtra, y Firestore
+    // rechaza el `list` completo si no puede demostrar la regla para todo resultado posible).
+    // StableDataContext suscribe HOY a todos los usuarios a collectionGroup de
+    // trainings/health/healthDocs: hay que pasar a listeners por caballo para los no
+    // administradores, exactamente como ya se hace con expenses.
+    match /{path=**}/trainings/{trainingId} {
+      allow read: if isStableAdmin(resource.data.stableId)
+        || (isStableMember(resource.data.stableId)
+            && isHorseRelated(resource.data.stableId, resource.data.hid));
+    }
+
+    match /{path=**}/health/{healthId} {
+      allow read: if isStableAdmin(resource.data.stableId)
+        || (isStableMember(resource.data.stableId)
+            && isHorseRelated(resource.data.stableId, resource.data.hid));
+    }
+
+    match /{path=**}/healthDocs/{healthDocId} {
+      allow read: if isStableAdmin(resource.data.stableId)
+        || (isStableMember(resource.data.stableId)
+            && isHorseRelated(resource.data.stableId, resource.data.hid));
+    }
+
+    match /{path=**}/expenses/{expenseId} {
+      // Admin is its own OR branch, not folded into isHorseRelated, so it stays provable from
+      // the query's own stableId filter alone: Firestore rejects an entire collectionGroup
+      // `list` request outright if the rule can't be proven true for every possible result
+      // using only the query's where() clauses — it does not filter non-matching documents
+      // out of a list result the way a get() does. isStableAdmin(...) depends only on
+      // resource.data.stableId, which IS the query's filter field (StableDataContext.jsx
+      // filters this collectionGroup by stableId alone), so an admin's existing single
+      // stable-wide listener keeps working unchanged. isHorseRelated(...) additionally
+      // depends on resource.data.hid, which the query does NOT filter on — a non-admin's
+      // request would fail that same proof, so non-admins read expenses through separate
+      // per-horse listeners instead (see docs/DATABASE.md and StableDataContext.jsx).
+      allow read: if isStableAdmin(resource.data.stableId)
+        || (isStableMember(resource.data.stableId)
+            && isHorseRelated(resource.data.stableId, resource.data.hid));
+    }
+
+    match /{path=**}/occurrences/{date} {
+      allow read: if isStableMember(resource.data.stableId);
+    }
+
+    match /users/{userId} {
+      allow read, write: if signedIn()
+        && request.auth.uid == userId;
+    }
+  }
+}

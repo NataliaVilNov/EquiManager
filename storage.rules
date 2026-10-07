@@ -1,0 +1,117 @@
+rules_version = '2';
+
+// ===================================================================================
+// Reglas de Firebase Storage para EquiLog
+// ===================================================================================
+// Hasta ahora NO existía este fichero en el repositorio y firebase.json solo declaraba
+// Firestore, así que `firebase deploy` nunca tocaba las reglas de Storage: lo que hubiese
+// en la consola quedaba permanente y sin revisar (realistamente, o "cualquier usuario
+// autenticado lee los ficheros de todos los clientes", o directamente público). Y Storage
+// se usa de verdad: informes veterinarios, radiografías, DICOM y analíticas (hasta 25 MB),
+// más fotos de caballos y de integrantes del equipo, con getDownloadURL() sobre todos ellos.
+//
+// Rutas reales que escribe el cliente (src/contexts/StableDataContext.jsx):
+//   stables/{stableId}/horses/{hid}/health_docs/{fichero}
+//   stables/{stableId}/horses/{hid}/photo/{fichero}
+//   stables/{stableId}/team/{mid}/photo/{fichero}
+//
+// -----------------------------------------------------------------------------------
+// LIMITACIÓN IMPORTANTE: las reglas de Storage NO pueden leer Firestore. No hay forma de
+// comprobar aquí si request.auth.uid está en stables/{stableId}.memberIds. La pertenencia
+// a la cuadra tiene que llegar como CUSTOM CLAIM del token de Auth, y para ponerla hace
+// falta una Cloud Function que escriba el claim al entrar y al salir de una cuadra
+// (admin.auth().setCustomUserClaims(uid, { stables: [...] })) — con el matiz de que el
+// claim no se refresca hasta que el cliente renueva el ID token (getIdToken(true)).
+//
+// Mientras esa Cloud Function no exista, la variante estricta por claim BLOQUEARÍA todas
+// las subidas y descargas (ningún usuario tiene el claim). Por eso la variante ACTIVA de
+// este fichero es la provisional: exige usuario autenticado + tope de 25 MB + lista blanca
+// de tipos de contenido. No aísla por cuadra, pero es estrictamente mejor que el estado
+// desconocido de la consola, y hace el fichero desplegable HOY.
+//
+// TRADE-OFF ACEPTADO (provisional): un usuario autenticado de otra cuadra que CONOZCA la
+// ruta exacta de un fichero puede leerlo. Ya no puede listar el bucket ni subir ejecutables
+// ni ficheros gigantes, y toda escritura queda acotada a stables/**.
+//
+// CÓMO PASAR A LA VARIANTE DEFINITIVA: desplegar la Cloud Function que mantiene el claim,
+// comentar `isSignedIn()` y descomentar `isStableMemberByClaim(stableId)` en los tres
+// bloques de abajo.
+// ===================================================================================
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // --- VARIANTE DEFINITIVA (requiere la Cloud Function que pone el custom claim) ---
+    // El claim `stables` es la lista de ids de cuadra a las que pertenece el usuario.
+    function isStableMemberByClaim(stableId) {
+      return request.auth != null
+        && request.auth.token.stables != null
+        && stableId in request.auth.token.stables;
+    }
+
+    // 25 MB, el mismo tope que valida el cliente en HealthDocUploader.jsx (maxMb = 25).
+    function underSizeLimit() {
+      return request.resource.size < 25 * 1024 * 1024;
+    }
+
+    // Lista blanca de tipos de contenido. Deja fuera a propósito todo lo que el navegador
+    // podría EJECUTAR servido desde el origen de Storage (text/html, image/svg+xml,
+    // application/xhtml+xml, cualquier javascript), que es el vector real de XSS/phishing
+    // con ficheros subidos. Se admiten application/zip y application/octet-stream porque el
+    // uploader acepta .zip y .dcm (DICOM) y el navegador no les asigna un tipo propio; esos
+    // tipos se descargan, no se renderizan.
+    function allowedContentType() {
+      return request.resource.contentType != null
+        && (
+          (request.resource.contentType.matches('image/.*')
+            && request.resource.contentType != 'image/svg+xml')
+          || request.resource.contentType == 'application/pdf'
+          || request.resource.contentType == 'application/zip'
+          || request.resource.contentType == 'application/dicom'
+          || request.resource.contentType == 'application/octet-stream'
+        );
+    }
+
+    // --- Documentos sanitarios (informes, radiografías, DICOM, analíticas) ------------
+    match /stables/{stableId}/horses/{hid}/health_docs/{fileName} {
+      allow read: if isSignedIn();
+      // allow read: if isStableMemberByClaim(stableId);   // <- variante definitiva
+      allow create, update: if isSignedIn() && underSizeLimit() && allowedContentType();
+      // allow create, update: if isStableMemberByClaim(stableId) && underSizeLimit() && allowedContentType();
+      allow delete: if isSignedIn();
+      // allow delete: if isStableMemberByClaim(stableId); // <- variante definitiva
+    }
+
+    // --- Foto de un caballo ------------------------------------------------------------
+    match /stables/{stableId}/horses/{hid}/photo/{fileName} {
+      allow read: if isSignedIn();
+      // allow read: if isStableMemberByClaim(stableId);   // <- variante definitiva
+      allow create, update: if isSignedIn() && underSizeLimit() && allowedContentType();
+      // allow create, update: if isStableMemberByClaim(stableId) && underSizeLimit() && allowedContentType();
+      allow delete: if isSignedIn();
+      // allow delete: if isStableMemberByClaim(stableId); // <- variante definitiva
+    }
+
+    // --- Foto de un integrante del equipo ---------------------------------------------
+    match /stables/{stableId}/team/{mid}/photo/{fileName} {
+      allow read: if isSignedIn();
+      // allow read: if isStableMemberByClaim(stableId);   // <- variante definitiva
+      allow create, update: if isSignedIn() && underSizeLimit() && allowedContentType();
+      // allow create, update: if isStableMemberByClaim(stableId) && underSizeLimit() && allowedContentType();
+      allow delete: if isSignedIn();
+      // allow delete: if isStableMemberByClaim(stableId); // <- variante definitiva
+    }
+
+    // Cierre por defecto: cualquier otra ruta del bucket queda denegada para todos. Las
+    // reglas de Storage son OR entre bloques coincidentes, así que este bloque no afloja
+    // los de arriba; solo cierra todo lo que ellos no cubren (incluida cualquier ruta
+    // heredada fuera de stables/**).
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
